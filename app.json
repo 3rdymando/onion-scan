@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "pd-revised",
+    "name": "Onion Scan",
     "slug": "snack-ac591856-6f5f-4006-b885-eadb0068871a",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -17,9 +17,10 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "onion.scan"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -28,6 +29,9 @@
       "eas": {
         "projectId": "208496b9-f7cd-436d-8b1f-8b404ef34576"
       }
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }
