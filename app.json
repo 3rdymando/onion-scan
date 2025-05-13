@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Onion Scan",
-    "slug": "snack-ac591856-6f5f-4006-b885-eadb0068871a",
+    "slug": "onion-scan",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
@@ -25,13 +25,14 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "extra": {
-      "eas": {
-        "projectId": "208496b9-f7cd-436d-8b1f-8b404ef34576"
-      }
-    },
     "plugins": [
       "expo-font"
-    ]
+    ],
+    "owner": "3rdy",
+    "extra": {
+      "eas": {
+        "projectId": "171e63b8-0dcb-4f89-9ec6-2b727851920c"
+      }
+    }
   }
 }

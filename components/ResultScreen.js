@@ -43,14 +43,6 @@ export default function ResultScreen({ route }) {
             <Text style={styles.detailText}>{item.species}</Text>
           </View>
           <View style={styles.detailBlock}>
-            <Text style={styles.detailTitle}>FILIPINO NAMES:</Text>
-            <Text style={styles.detailText}>{item.filipinoNames || 'N/A'}</Text>
-          </View>
-          <View style={styles.detailBlock}>
-            <Text style={styles.detailTitle}>STAGES OF DEVELOPMENT:</Text>
-            <Text style={styles.detailText}>{item.stagesOfDevelopment || 'N/A'}</Text>
-          </View>
-          <View style={styles.detailBlock}>
             <Text style={styles.detailTitle}>DAMAGE CHARACTERISTICS:</Text>
             <Text style={styles.detailText}>{item.damageCharacteristics || 'N/A'}</Text>
           </View>
