@@ -1,23 +1,53 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../firebase.js';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase.js'; 
 
 export default function SignupScreen({ navigation }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+  const handleSignup = async () => {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Save the name and email to Firestore under 'users' collection
+      await setDoc(doc(db, 'users', user.uid), {
+        name: name,
+        email: email,
+        createdAt: new Date(),
+      });
+
+      Alert.alert('Success', 'Account created successfully!');
+      navigation.navigate('Login');
+    } catch (error) {
+      let errorMessage = 'Signup failed';
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'This email is already in use.';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address.';
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = 'Password should be at least 6 characters.';
+      }
+      Alert.alert('Signup Error', errorMessage);
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {/* Logo and App Name */}
+      {/* Logo */}
       <Image
-        source={require('../assets/logo.png')} // Removed clickable URL and used local image
+        source={require('../assets/logo.png')}
         style={styles.logo}
       />
 
-      {/* Title */}
       <Text style={styles.title}>CREATE NEW ACCOUNT</Text>
+      <Text style={styles.subTitle}>Enter your name, email, and password if you have no account.</Text>
 
-      {/* Input Fields */}
       <TextInput
         style={styles.input}
         placeholder="Name"
@@ -25,6 +55,8 @@ export default function SignupScreen({ navigation }) {
         value={name}
         onChangeText={setName}
       />
+      <Text style={styles.helperText}><Text style={{ fontStyle: 'italic' }}>(First Name, Last Name)</Text></Text>
+
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -34,6 +66,8 @@ export default function SignupScreen({ navigation }) {
         keyboardType="email-address"
         autoCapitalize="none"
       />
+      <Text style={styles.helperText}><Text style={{ fontStyle: 'italic' }}>(name@gmail.com)</Text></Text>
+
       <TextInput
         style={styles.input}
         placeholder="Password"
@@ -43,12 +77,10 @@ export default function SignupScreen({ navigation }) {
         secureTextEntry
       />
 
-      {/* Sign Up Button */}
-      <TouchableOpacity style={styles.button} onPress={() => alert('Account Created')}>
+      <TouchableOpacity style={styles.button} onPress={handleSignup}>
         <Text style={styles.buttonText}>Sign Up</Text>
       </TouchableOpacity>
 
-      {/* Login Link */}
       <TouchableOpacity onPress={() => navigation.navigate('Login')}>
         <Text style={styles.link}>Already registered? Login</Text>
       </TouchableOpacity>
@@ -71,30 +103,32 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 10,
   },
-  appName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#4A0D67',
-    marginBottom: 30,
-  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#4A0D67',
-    marginBottom: 30,
+    marginBottom: 8,
   },
-  link: {
-    color: '#4A0D67',
-    fontWeight: '500',
-    marginTop: 20,
+  subTitle: {
+    fontSize: 12.6,
+    color: '#6B7280',
+    marginTop: 1,
+    marginBottom: 16,
+    textAlign: 'center',
   },
   input: {
     width: '100%',
     padding: 15,
     backgroundColor: '#4B6600',
     borderRadius: 10,
-    marginBottom: 15,
+    marginBottom: 5,
     color: '#FFFFFF',
+  },
+  helperText: {
+    color: '#6B7280',
+    fontSize: 12,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
   },
   button: {
     backgroundColor: '#FF3BBF',
@@ -102,10 +136,16 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     width: '100%',
+    marginTop: 10,
   },
   buttonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  link: {
+    color: '#4A0D67',
+    fontWeight: '500',
+    marginTop: 20,
   },
 });

@@ -1,16 +1,46 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
+import { getAuth, sendPasswordResetEmail } from 'firebase/auth'; // Import Firebase Auth functions
+import app from '../firebase.js'; // Adjust the path to your firebase config file
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
+  const auth = getAuth(app);
+
+  const handlePasswordReset = () => {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+    sendPasswordResetEmail(auth, email)
+      .then(() => {
+        Alert.alert(
+          'Success',
+          'Password reset email sent! Please check your inbox.',
+          [{ text: 'OK', onPress: () => navigation.navigate('FrontPage') }]
+        );
+      })
+      .catch((error) => {
+        // Handle errors here
+        let message = '';
+        switch (error.code) {
+          case 'auth/invalid-email':
+            message = 'Invalid email address format.';
+            break;
+          case 'auth/user-not-found':
+            message = 'No user found with this email.';
+            break;
+          default:
+            message = error.message;
+        }
+        Alert.alert('Error', message);
+      });
+  };
 
   return (
     <View style={styles.container}>
       {/* Logo and Name */}
-      <Image
-        source={require('../assets/logo.png')}
-        style={styles.logo}
-      />
+      <Image source={require('../assets/logo.png')} style={styles.logo} />
 
       {/* Title */}
       <Text style={styles.title}>FORGOT PASSWORD</Text>
@@ -28,7 +58,7 @@ export default function ForgotPasswordScreen({ navigation }) {
       />
 
       {/* Send Button */}
-      <TouchableOpacity style={styles.button} onPress={() => alert('Password Reset Email Sent')}>
+      <TouchableOpacity style={styles.button} onPress={handlePasswordReset}>
         <Text style={styles.buttonText}>Send</Text>
       </TouchableOpacity>
 

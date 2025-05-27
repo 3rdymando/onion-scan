@@ -1,13 +1,40 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../firebase.js'; // <- Make sure the path is correct
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = () => {
+const handleLogin = async () => {
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
     navigation.navigate('Dashboard');
-  };
+  } catch (error) {
+
+    let message;
+    switch (error.code) {
+      case 'auth/user-not-found':
+        message = 'User not found.';
+        break;
+      case 'auth/wrong-password':
+        message = 'Incorrect password.';
+        break;
+      case 'auth/invalid-email':
+        message = 'Invalid email address.';
+        break;
+      case 'auth/invalid-credential':
+        message = 'Invalid email or password.';
+        break;
+      default:
+        message = `Login failed: ${error.code}`;
+        break;
+    }
+
+    Alert.alert('Login Error', message);
+  }
+};
 
   return (
     <View style={styles.container}>
@@ -15,8 +42,8 @@ export default function LoginScreen({ navigation }) {
         source={require('../assets/logo.png')}
         style={styles.logo}
       />
-
       <Text style={styles.title}>LOGIN</Text>
+      <Text style={styles.subTitle}>Enter your email and password if you already have an account.</Text>
 
       <TextInput
         style={styles.input}
@@ -35,7 +62,7 @@ export default function LoginScreen({ navigation }) {
         onChangeText={setPassword}
         secureTextEntry
       />
-
+      
       <TouchableOpacity style={styles.button} onPress={handleLogin}>
         <Text style={styles.buttonText}>Login</Text>
       </TouchableOpacity>
@@ -68,7 +95,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "bold",
-    marginBottom: 30,
+    marginBottom: 10,
     color: '#4A0D67',
     textAlign: 'center', 
   },
@@ -99,5 +126,11 @@ const styles = StyleSheet.create({
   linkText: {
     color: '#4A0D67',
     fontWeight: '500',
+  },
+  subTitle: {
+    fontSize: 12.3,
+    color: '#6B7280',
+    marginBottom: 17,
+    textAlign: 'center',
   },
 });

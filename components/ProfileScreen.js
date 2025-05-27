@@ -1,24 +1,51 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { getAuth, signOut} from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase.js';
 
 export default function ProfileScreen() {
   const navigation = useNavigation();
-  const [name, setName] = useState('Rachel'); // Initial name set to Rachel
-  const [isEditing, setIsEditing] = useState(false); // Toggle editing mode
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
 
-  const handleLogout = () => {
-    // Handle any additional logout logic here if needed (e.g., clear user data, tokens, etc.)
-    navigation.navigate('FrontPage'); // Navigate to the FrontPage screen
-  };
+  useEffect(() => {
+    const auth = getAuth();
+    const user = auth.currentUser;
 
-  const toggleEdit = () => {
-    setIsEditing(!isEditing);
-  };
+    if (!user) {
+      Alert.alert('Not logged in', 'Please login first');
+      navigation.navigate('Login');
+      return;
+    }
 
-  const saveName = () => {
-    setIsEditing(false);
-    // Additional logic for saving the name (e.g., to a database) can be added here
+    const fetchUserData = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setName(userData.name || '');
+          setEmail(userData.email || '');
+        } else {
+          console.warn('User document does not exist');
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      }
+    };
+
+    fetchUserData();
+  }, [navigation]);
+
+  const handleLogout = async () => {
+    const auth = getAuth();
+    try {
+      await signOut(auth);
+      navigation.navigate('FrontPage');
+    } catch (error) {
+      Alert.alert('Logout failed', error.message);
+    }
   };
 
   return (
@@ -27,23 +54,9 @@ export default function ProfileScreen() {
         source={require('../assets/logo.png')}
         style={styles.avatar}
       />
-      {isEditing ? (
-        <TextInput
-          style={styles.nameInput}
-          value={name}
-          onChangeText={setName}
-          autoFocus
-        />
-      ) : (
-        <Text style={styles.name}>{name}</Text>
-      )}
+      <Text style={styles.name}>{name || 'No Name Set'}</Text>
+      <Text style={styles.email}>{email || 'No Email Available'}</Text>
 
-      {/* Edit Profile Button */}
-      <TouchableOpacity style={styles.button} onPress={isEditing ? saveName : toggleEdit}>
-        <Text style={styles.buttonText}>{isEditing ? 'Save' : 'Edit Profile'}</Text>
-      </TouchableOpacity>
-
-      {/* Logout Button */}
       <TouchableOpacity style={styles.button} onPress={handleLogout}>
         <Text style={styles.buttonText}>Logout</Text>
       </TouchableOpacity>
@@ -56,32 +69,27 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF', // Light background color
+    backgroundColor: '#FFFFFF',
   },
   avatar: {
     width: 300,
     height: 300,
-    borderRadius: 10, // Adjust to make the image fit better in a square shape
+    borderRadius: 10,
     marginBottom: 20,
   },
   name: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#4A5568', // Dark color for text
-    marginBottom: 20,
+    color: '#4A5568',
+    marginBottom: 10,
   },
-  nameInput: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#4A5568', // Match text color to the previous text
-    marginBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#4A5568', // Border to match text color
-    width: '80%',
-    textAlign: 'center',
+  email: {
+    fontSize: 18,
+    color: '#718096',
+    marginBottom: 30,
   },
   button: {
-    backgroundColor: '#FF3BBF', // Pink background for buttons
+    backgroundColor: '#FF3BBF',
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',

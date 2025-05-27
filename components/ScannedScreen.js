@@ -13,10 +13,10 @@ export default function ScannedScreen({ navigation }) {
   const loadScans = async () => {
     try {
       const savedScans = await AsyncStorage.getItem('scannedPests');
-      console.log('Raw saved scans from AsyncStorage:', savedScans);
+      //console.log('Raw saved scans from AsyncStorage:', savedScans);
 
       const parsedScans = savedScans ? JSON.parse(savedScans) : [];
-      console.log('Parsed scans:', parsedScans);
+      //console.log('Parsed scans:', parsedScans);
 
       setScans(parsedScans);
       setFilteredScans(groupScansByMonth(parsedScans));
@@ -151,7 +151,7 @@ export default function ScannedScreen({ navigation }) {
         sections={filteredScans}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => {
-          console.log('Rendering scan item:', item);
+          // console.log('Rendering scan item:', item);//
           return (
             <View style={styles.itemContainer}>
               <TouchableOpacity
@@ -244,7 +244,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginVertical: 12,
     fontFamily: 'Montserrat',
-    color: '#555',
   },
   searchAndClearContainer: {
     flexDirection: 'row',

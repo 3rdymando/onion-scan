@@ -8,11 +8,62 @@ import {
   StyleSheet,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Camera } from 'expo-camera';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { db } from '../firebase.js'; 
+import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
+import axios from 'axios';
+
+const CLOUDINARY_UPLOAD_PRESET = 'pests-images'; // replace 
+const CLOUDINARY_CLOUD_NAME = 'dqfiqexpu';       // replace 
+
+export const uploadToCloudinary = async (imageUri) => {
+  const data = new FormData();
+  data.append('file', {
+    uri: imageUri,
+    type: 'image/jpeg',
+    name: 'upload.jpg',
+  });
+  data.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+  data.append('cloud_name', CLOUDINARY_CLOUD_NAME);
+
+  try {
+    const response = await axios.post(
+      `https://api.cloudinary.com/v1_1/dqfiqexpu/image/upload`,
+      data,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+
+    return response.data.secure_url;
+  } catch (error) {
+    console.error('Cloudinary upload error:', error);
+    throw new Error('Failed to upload to Cloudinary.');
+  }
+};
+
+const getFarmerName = async (userId) => {
+  if (!userId) return 'Unknown Farmer';
+  try {
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (userDoc.exists()) {
+      return userDoc.data().name || 'Unnamed Farmer';
+    }
+    return 'Unknown Farmer';
+  } catch (error) {
+    console.error('Error fetching farmer name:', error);
+    return 'Unknown Farmer';
+  }
+};
 
 const { height } = Dimensions.get('window');
 
@@ -20,13 +71,26 @@ const OnionScanApp = ({ navigation }) => {
   const [hasCameraPermission, setHasCameraPermission] = useState(null);
   const [hasMediaPermission, setHasMediaPermission] = useState(null);
   const [locationPermissionStatus, setLocationPermissionStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [userId, setUserId] = useState(null);
 
   useEffect(() => {
     (async () => {
+      // Get Firebase Auth current user
+      const auth = getAuth();
+      const user = auth.currentUser;
+      if (user) {
+        setUserId(user.uid);
+      } else {
+        Alert.alert('User not logged in', 'Please log in to use the app.');
+        navigation.navigate('Login'); // redirect if needed
+      }
+
+      // Request permissions
       const cameraStatus = await Camera.requestCameraPermissionsAsync();
       setHasCameraPermission(cameraStatus.status === 'granted');
 
-      const mediaStatus = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const mediaStatus = await Location.requestForegroundPermissionsAsync();
       setHasMediaPermission(mediaStatus.status === 'granted');
 
       const locationStatus = await Location.requestForegroundPermissionsAsync();
@@ -35,25 +99,28 @@ const OnionScanApp = ({ navigation }) => {
   }, []);
 
   const requestLocationPermission = async () => {
+    setLoading(true);
     const { status } = await Location.requestForegroundPermissionsAsync();
     const servicesEnabled = await Location.hasServicesEnabledAsync();
 
     if (status !== 'granted') {
       Alert.alert('Location Access', 'Permission denied.');
+      setLoading(false);
       return { granted: false };
     }
 
     if (!servicesEnabled) {
       Alert.alert(
         'Location Services Disabled',
-        'Please enable GPS/location services in your device settings.'
-      );
+        'Please enable GPS/location services in your device settings.');
+        setLoading(false); 
       return { granted: false };
     }
 
     try {
       const location = await Location.getCurrentPositionAsync({});
       Alert.alert('Location Access', 'Permission granted and GPS is ON!');
+      setLoading(false);
       return {
         granted: true,
         latitude: location.coords.latitude,
@@ -61,6 +128,7 @@ const OnionScanApp = ({ navigation }) => {
       };
     } catch (error) {
       Alert.alert('Location Error', 'Failed to get location: ' + error.message);
+      setLoading(false);
       return { granted: false };
     }
   };
@@ -84,8 +152,6 @@ const OnionScanApp = ({ navigation }) => {
         order: 'Lepidoptera',
         family: 'Noctuidae',
         species: 'Mythimna unipuncta',
-        filipinoNames: 'N/A',
-        stagesOfDevelopment: 'Egg, Larva, Pupa, Adult',
         damageCharacteristics: 'Chews leaves, causing irregular holes; can defoliate crops.',
         treatmentRecommendations: 'Use Bacillus thuringiensis (Bt) or chemical insecticides; remove crop debris.',
       },
@@ -94,8 +160,6 @@ const OnionScanApp = ({ navigation }) => {
         order: 'Lepidoptera',
         family: 'Noctuidae',
         species: 'Agrotis spp.',
-        filipinoNames: 'N/A',
-        stagesOfDevelopment: 'Egg, Larva, Pupa, Adult',
         damageCharacteristics: 'Cuts stems at soil level; feeds on roots and leaves.',
         treatmentRecommendations: 'Use collars around seedlings; apply insecticides at dusk.',
       },
@@ -104,8 +168,6 @@ const OnionScanApp = ({ navigation }) => {
         order: 'Acari',
         family: 'Tetranychidae',
         species: 'Tetranychus urticae',
-        filipinoNames: 'N/A',
-        stagesOfDevelopment: 'Egg, Larva, Nymph, Adult',
         damageCharacteristics: 'Sucks sap, causing stippling, yellowing, and webbing on leaves.',
         treatmentRecommendations: 'Use miticides; increase humidity; introduce predatory mites.',
       },
@@ -115,8 +177,6 @@ const OnionScanApp = ({ navigation }) => {
       order: 'Unknown',
       family: 'Unknown',
       species: 'Unknown',
-      filipinoNames: 'N/A',
-      stagesOfDevelopment: 'N/A',
       damageCharacteristics: 'N/A',
       treatmentRecommendations: 'N/A',
     };
@@ -124,41 +184,44 @@ const OnionScanApp = ({ navigation }) => {
 
   const savePrediction = async (pestDetails, latitude, longitude) => {
     try {
+      if (!userId) {
+        Alert.alert('Error', 'User not authenticated.');
+        return;
+      }
+
+      const farmerName = await getFarmerName(userId);
+
       const now = new Date();
       const date = now.toISOString().split('T')[0];
       const time = now.toTimeString().split(' ')[0];
-  
+
       const scanData = {
         id: Date.now().toString(),
         result: pestDetails.title,
-        date: date,
-        time: time,
-        image: pestDetails.image, // The image URI
-        latitude: latitude,
-        longitude: longitude,
+        date,
+        time,
+        image: pestDetails.image,
+        latitude,
+        longitude,
         details: pestDetails,
+        farmerName,
+        userId,
       };
-  
-      console.log('Saving prediction to AsyncStorage:', scanData);
-  
+
+      // Save locally
       const existingScans = await AsyncStorage.getItem('scannedPests');
-      console.log('Existing scans from AsyncStorage:', existingScans);
-  
       const scans = existingScans ? JSON.parse(existingScans) : [];
-      console.log('Parsed scans:', scans);
-  
       scans.push(scanData);
-      console.log('Updated scans array:', scans);
-  
       await AsyncStorage.setItem('scannedPests', JSON.stringify(scans));
-      console.log('Prediction saved successfully:', scanData);
-  
-      // Verify the save by immediately reading the data back
-      const savedScans = await AsyncStorage.getItem('scannedPests');
-      console.log('Saved scans after writing:', savedScans);
+
+      // Save to Firestore
+      await addDoc(collection(db, 'pestScans'), scanData);
+
+      console.log('Prediction saved locally and to Firestore:', scanData);
+      Alert.alert('Success', 'Prediction saved successfully.');
     } catch (error) {
-      console.error('Error saving prediction to AsyncStorage:', error);
-      Alert.alert('Storage Error', 'Failed to save prediction: ' + error.message);
+      console.error('Error saving prediction:', error);
+      Alert.alert('Save Error', 'Failed to save prediction: ' + error.message);
     }
   };
 
@@ -173,7 +236,7 @@ const OnionScanApp = ({ navigation }) => {
       formData.append('latitude', latitude.toString());
       formData.append('longitude', longitude.toString());
 
-      const response = await fetch('https://68gw0r1w-5000.asse.devtunnels.ms/predict', {
+      const response = await fetch('https://qjbferrer-onionscanserver.hf.space/predict', {
         method: 'POST',
         body: formData,
         headers: {
@@ -197,22 +260,36 @@ const OnionScanApp = ({ navigation }) => {
     }
   };
 
-  const handleImageSelection = async (imageUri) => {
-    const locationResult = await requestLocationPermission();
-    if (!locationResult.granted) return;
+const handleImageSelection = async (imageUri) => {
+  const locationResult = await requestLocationPermission();
+  if (!locationResult.granted) return;
 
-    const { latitude, longitude } = locationResult;
+  const { latitude, longitude } = locationResult;
 
-    const prediction = await callPredictionAPI(imageUri, latitude, longitude);
+  setLoading(true); // Start loading
+
+  try {
+    // 🔼 Upload image to Cloudinary
+    const uploadedImageUrl = await uploadToCloudinary(imageUri);
+
+    // 🔮 Get prediction using Cloudinary URL
+    const prediction = await callPredictionAPI(uploadedImageUrl, latitude, longitude);
+
     if (prediction) {
       const pestDetails = getPestDetails(prediction.predicted_class);
-      pestDetails.image = imageUri;
+      pestDetails.image = uploadedImageUrl; // Use the Cloudinary URL
       pestDetails.latitude = latitude;
       pestDetails.longitude = longitude;
+
       await savePrediction(pestDetails, latitude, longitude);
       navigation.navigate('ResultScreen', { item: pestDetails });
     }
-  };
+  } catch (error) {
+    Alert.alert('Error', error.message);
+  } finally {
+    setLoading(false); // End loading
+  }
+};
 
   const handleCapturePest = async () => {
     if (!hasCameraPermission) {
@@ -297,6 +374,15 @@ const OnionScanApp = ({ navigation }) => {
           </Text>
         </View>
       </ScrollView>
+
+            {/* Loading Indicator Overlay */}
+      <Modal transparent={true} animationType="fade" visible={loading}>
+        <View style={styles.loadingOverlay}>
+          <View style={styles.spinnerContainer}></View>
+          <ActivityIndicator size="large" color="#7a1f6f" style={styles.spinner} />
+          <Text style={styles.loadingText}>Analyzing image. Please Wait....</Text>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -398,6 +484,17 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     resizeMode: 'contain',
+    },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#fff',
+    fontSize: 16,
   },
 });
 

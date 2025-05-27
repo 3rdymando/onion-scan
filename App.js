@@ -1,13 +1,14 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Animated } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-
-import FrontPage2 from './components/FrontPage.js'; /* oki na  */
-import LoginScreen from './components/LoginScreen.js'; /* oki na  */
+// Your screen imports here
+import FrontPage2 from './components/FrontPage.js';
+import LoginScreen from './components/LoginScreen.js';
 import SignupScreen from './components/SignupScreen.js';
 import ForgotPasswordScreen from './components/ForgotPasswordScreen.js';
 import OnionScanApp from './components/DashboardScreen.js';
@@ -25,16 +26,10 @@ function DashboardTabNavigator() {
       screenOptions={({ route }) => ({
         tabBarIcon: ({ color, size }) => {
           let iconName;
-
-          if (route.name === 'Home') {
-            iconName = 'home-outline';
-          } else if (route.name === 'Library') {
-            iconName = 'book-outline';
-          } else if (route.name === 'Scanned') {
-            iconName = 'image-outline';
-          } else if (route.name === 'Profile') {
-            iconName = 'person-outline';
-          }
+          if (route.name === 'Home') iconName = 'home-outline';
+          else if (route.name === 'Library') iconName = 'book-outline';
+          else if (route.name === 'Scanned') iconName = 'image-outline';
+          else if (route.name === 'Profile') iconName = 'person-outline';
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -60,48 +55,85 @@ function DashboardTabNavigator() {
 }
 
 export default function App() {
+  const [isConnected, setIsConnected] = useState(true);
+  const [showPopup, setShowPopup] = useState(false);
+  const popupOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const connected = state.isConnected && state.isInternetReachable !== false;
+
+      if (connected !== isConnected) {
+        setIsConnected(connected);
+
+        if (!connected) {
+          // Show popup only when losing connection
+          setShowPopup(true);
+          Animated.timing(popupOpacity, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }).start();
+
+          setTimeout(() => {
+            Animated.timing(popupOpacity, {
+              toValue: 1,
+              duration: 800,
+              useNativeDriver: true,
+            }).start(() => setShowPopup(false));
+          }, 8000);
+        }
+        // If connected, do NOT show popup
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isConnected, popupOpacity]);
+
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName="FrontPage">
-        <Stack.Screen
-          name="FrontPage"
-          component={FrontPage2}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Login"
-          component={LoginScreen}
-          options={{ title: 'Login' }}
-        />
-        <Stack.Screen
-          name="Signup"
-          component={SignupScreen}
-          options={{ title: 'Sign Up' }}
-        />
-        <Stack.Screen
-          name="ForgotPassword"
-          component={ForgotPasswordScreen}
-          options={{ title: 'Forgot Password' }}
-        />
-        <Stack.Screen
-          name="Dashboard"
-          component={DashboardTabNavigator}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="ResultScreen"
-          component={ResultScreen}
-          options={{ title: 'Pest Details' }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <>
+      {/* Status Bar */}
+      <View style={[styles.statusBar, { backgroundColor: isConnected ? 'green' : 'red' }]} />
+
+      {/* Popup only shows when disconnected */}
+      {showPopup && (
+        <Animated.View style={[styles.popup, { opacity: popupOpacity }]}>
+          <Text style={styles.popupText}>No internet connection!</Text>
+        </Animated.View>
+      )}
+
+      {/* Navigation */}
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName="FrontPage">
+          <Stack.Screen name="FrontPage" component={FrontPage2} options={{ headerShown: false }} />
+          <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'Login' }} />
+          <Stack.Screen name="Signup" component={SignupScreen} options={{ title: 'Sign Up' }} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ title: 'Forgot Password' }} />
+          <Stack.Screen name="Dashboard" component={DashboardTabNavigator} options={{ headerShown: false }} />
+          <Stack.Screen name="ResultScreen" component={ResultScreen} options={{ title: 'Pest Details' }} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  icon: {
-    width: 24,
-    height: 24,
-    resizeMode: 'contain',
+  statusBar: {
+    height: 40,
+    width: '100%',
+    zIndex: 999,
+  },
+  popup: {
+    position: 'absolute',
+    top: 40,
+    width: '100%',
+    padding: 5,
+    backgroundColor: '#cc000033',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  popupText: {
+    color: '#cc0000',
+    fontWeight: 'bold',
   },
 });

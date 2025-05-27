@@ -8,7 +8,10 @@ const FrontPage2 = ({ navigation }) => {
         source={require('../assets/logo.png')}
         style={styles.logo}
       />
+      
       <Text style={styles.subtitle}>Mobile Application for Classifying Onion Pests</Text>
+      <Text style={styles.subTitle}>Press the button to begin scanning.</Text>
+      
       <TouchableOpacity
         style={styles.startButton}
         onPress={() => navigation.navigate('Login')}
@@ -33,7 +36,7 @@ const styles = StyleSheet.create({
     width: 300,
     height: 300,
     resizeMode: 'contain',
-    marginBottom: 20,
+    marginBottom: 1,
   },
   title: {
     fontSize: 28,
@@ -45,6 +48,7 @@ const styles = StyleSheet.create({
     color: '#333',
     textAlign: 'center',
     marginVertical: 10,
+    marginTop: 20,
   },
   startButton: {
     backgroundColor: '#FF3BBF',
@@ -52,11 +56,18 @@ const styles = StyleSheet.create({
     width: 350,
     borderRadius: 10,
     alignItems: 'center',
-    marginTop: 30,
+    marginTop: 10,
   },
   startButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  subTitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 15,
+    marginBottom: 1,
+    textAlign: 'center',
   },
 });
