@@ -1,40 +1,52 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebase.js'; // <- Make sure the path is correct
+import { auth } from '../firebase.js';
+import AwesomeAlert from 'react-native-awesome-alerts';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-const handleLogin = async () => {
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-    navigation.navigate('Dashboard');
-  } catch (error) {
+  // Alert state
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
 
-    let message;
-    switch (error.code) {
-      case 'auth/user-not-found':
-        message = 'User not found.';
-        break;
-      case 'auth/wrong-password':
-        message = 'Incorrect password.';
-        break;
-      case 'auth/invalid-email':
-        message = 'Invalid email address.';
-        break;
-      case 'auth/invalid-credential':
-        message = 'Invalid email or password.';
-        break;
-      default:
-        message = `Login failed: ${error.code}`;
-        break;
+  const showCustomAlert = (title, message) => {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setShowAlert(true);
+  };
+
+  const handleLogin = async () => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      navigation.navigate('Dashboard');
+    } catch (error) {
+      let message;
+      switch (error.code) {
+        case 'auth/user-not-found':
+          message = 'User not found.';
+          break;
+        case 'auth/wrong-password':
+          message = 'Incorrect password.';
+          break;
+        case 'auth/invalid-email':
+          message = 'Invalid email address.';
+          break;
+        case 'auth/invalid-credential':
+          message = 'Invalid email or password.';
+          break;
+        default:
+          message = `Login failed: ${error.code}`;
+          break;
+      }
+
+      // Use custom alert instead of Alert.alert
+      showCustomAlert('Login Error', message);
     }
-
-    Alert.alert('Login Error', message);
-  }
-};
+  };
 
   return (
     <View style={styles.container}>
@@ -62,7 +74,7 @@ const handleLogin = async () => {
         onChangeText={setPassword}
         secureTextEntry
       />
-      
+
       <TouchableOpacity style={styles.button} onPress={handleLogin}>
         <Text style={styles.buttonText}>Login</Text>
       </TouchableOpacity>
@@ -74,6 +86,19 @@ const handleLogin = async () => {
       <TouchableOpacity style={styles.link} onPress={() => navigation.navigate('ForgotPassword')}>
         <Text style={styles.linkText}>Forgot Password?</Text>
       </TouchableOpacity>
+
+      <AwesomeAlert
+        show={showAlert}
+        showProgress={false}
+        title={alertTitle}
+        message={alertMessage}
+        closeOnTouchOutside={true}
+        closeOnHardwareBackPress={true}
+        showConfirmButton={true}
+        confirmText="OK"
+        confirmButtonColor="#7a1f6f"
+        onConfirmPressed={() => setShowAlert(false)}
+      />
     </View>
   );
 }
@@ -83,7 +108,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#ffffffff',
   },
   logo: {
     width: 200,
@@ -106,6 +131,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 15,
     color: '#FFFFFF',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5, 
   },
   button: {
     backgroundColor: '#FF3BBF',
@@ -113,6 +143,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     marginBottom: 20,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5, 
   },
   buttonText: {
     color: '#FFFFFF',

@@ -4,7 +4,6 @@ import {
   Text,
   Image,
   TouchableOpacity,
-  Alert,
   StyleSheet,
   ScrollView,
   Dimensions,
@@ -13,15 +12,39 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import * as MediaLibrary from 'expo-media-library';
 import { Camera } from 'expo-camera';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../firebase.js'; 
-import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import axios from 'axios';
+import AwesomeAlert from 'react-native-awesome-alerts';  // NEW
 
-const CLOUDINARY_UPLOAD_PRESET = 'pests-images'; // replace 
-const CLOUDINARY_CLOUD_NAME = 'dqfiqexpu';       // replace 
+const getAddressFromCoords = async (lat, lng) => {
+  const accessToken = 'pk.eyJ1IjoicWpiZmVycmVyIiwiYSI6ImNtYTlqbDEyaTBrYnUya3BzeHd4ZWFnOXMifQ.PeNfgVuGD53Au8Vmkpe2RQ';
+  try {
+    const response = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${accessToken}`
+    );
+    const data = await response.json();
+    if (
+      data.features &&
+      data.features.length > 0 &&
+      data.features[0].place_name
+    ) {
+      return data.features[0].place_name;
+    } else {
+      return 'Unknown Location';
+    }
+  } catch (error) {
+    console.error('Error in reverse geocoding:', error);
+    return 'Unknown Location';
+  }
+};
+
+const CLOUDINARY_UPLOAD_PRESET = 'pests-images';
+const CLOUDINARY_CLOUD_NAME = 'dqfiqexpu';
 
 export const uploadToCloudinary = async (imageUri) => {
   const data = new FormData();
@@ -74,23 +97,51 @@ const OnionScanApp = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState(null);
 
+  // NEW: farmer name
+  const [farmerName, setFarmerName] = useState('');
+
+  // AwesomeAlert state
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+
+  const showCustomAlert = (title, message) => {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setShowAlert(true);
+  };
+
+  // Rotating loading messages
+  const loadingMessages = [
+    "Uploading image...",
+    "Predicting pest type...",
+    "Saving to database..."
+  ];
+  // Custom durations for each message (ms)
+  const loadingDurations = [
+    5000,   // Uploading image → 5s
+    10000,  // Predicting pest type → 10s
+    5000    // Saving to database → 5s
+  ];
+  const [loadingStep, setLoadingStep] = useState(0);
+
   useEffect(() => {
     (async () => {
-      // Get Firebase Auth current user
       const auth = getAuth();
       const user = auth.currentUser;
       if (user) {
         setUserId(user.uid);
+        const name = await getFarmerName(user.uid);
+        setFarmerName(name);
       } else {
-        Alert.alert('User not logged in', 'Please log in to use the app.');
-        navigation.navigate('Login'); // redirect if needed
+        showCustomAlert('User not logged in', 'Please log in to use the app.');
+        navigation.navigate('Login');
       }
 
-      // Request permissions
       const cameraStatus = await Camera.requestCameraPermissionsAsync();
       setHasCameraPermission(cameraStatus.status === 'granted');
 
-      const mediaStatus = await Location.requestForegroundPermissionsAsync();
+      const mediaStatus = await MediaLibrary.requestPermissionsAsync();
       setHasMediaPermission(mediaStatus.status === 'granted');
 
       const locationStatus = await Location.requestForegroundPermissionsAsync();
@@ -98,28 +149,53 @@ const OnionScanApp = ({ navigation }) => {
     })();
   }, []);
 
+  // Handle rotating loading messages with different durations
+  useEffect(() => {
+    let timeouts = [];
+
+    if (loading) {
+      setLoadingStep(0);
+
+      let totalDelay = 0;
+      for (let i = 0; i < loadingMessages.length - 1; i++) {
+        totalDelay += loadingDurations[i];
+        const timeout = setTimeout(() => {
+          setLoadingStep(i + 1);
+        }, totalDelay);
+        timeouts.push(timeout);
+      }
+    } else {
+      setLoadingStep(0);
+    }
+
+    return () => {
+      timeouts.forEach(clearTimeout);
+    };
+  }, [loading]);
+
   const requestLocationPermission = async () => {
     setLoading(true);
     const { status } = await Location.requestForegroundPermissionsAsync();
     const servicesEnabled = await Location.hasServicesEnabledAsync();
 
     if (status !== 'granted') {
-      Alert.alert('Location Access', 'Permission denied.');
+      showCustomAlert('Location Access', 'Permission denied.');
       setLoading(false);
       return { granted: false };
     }
 
     if (!servicesEnabled) {
-      Alert.alert(
+      showCustomAlert(
         'Location Services Disabled',
-        'Please enable GPS/location services in your device settings.');
-        setLoading(false); 
+        'Please enable GPS/location services in your device settings.'
+      );
+      setLoading(false);
       return { granted: false };
     }
 
     try {
       const location = await Location.getCurrentPositionAsync({});
-      Alert.alert('Location Access', 'Permission granted and GPS is ON!');
+      showCustomAlert('Location Access', 'Permission granted and GPS is ON!');
       setLoading(false);
       return {
         granted: true,
@@ -127,7 +203,7 @@ const OnionScanApp = ({ navigation }) => {
         longitude: location.coords.longitude,
       };
     } catch (error) {
-      Alert.alert('Location Error', 'Failed to get location: ' + error.message);
+      showCustomAlert('Location Error', 'Failed to get location: ' + error.message);
       setLoading(false);
       return { granted: false };
     }
@@ -135,42 +211,135 @@ const OnionScanApp = ({ navigation }) => {
 
   const requestBackgroundLocationPermission = async () => {
     const { status } = await Location.requestBackgroundPermissionsAsync();
-
     if (status !== 'granted') {
-      Alert.alert('Background Location Access', 'Permission denied.');
+      showCustomAlert('Background Location Access', 'Permission denied.');
       return;
     }
-
-    Alert.alert('Background Location Access', 'Background location access granted!');
+    showCustomAlert('Background Location Access', 'Background location access granted!');
   };
 
-  // Pest details mapping based on predicted class
   const getPestDetails = (predictedClass) => {
+    if (predictedClass === 'non_pest_images_random') {
+      predictedClass = 'Others';
+    }
     const pestDetails = {
       Armyworm: {
         title: 'Armyworm',
         order: 'Lepidoptera',
         family: 'Noctuidae',
-        species: 'Mythimna unipuncta',
-        damageCharacteristics: 'Chews leaves, causing irregular holes; can defoliate crops.',
-        treatmentRecommendations: 'Use Bacillus thuringiensis (Bt) or chemical insecticides; remove crop debris.',
+        species: 'Spodoptera frugiperda',
+        damageCharacteristics: [
+          'Young larvae feed by scaping the leaves.', 
+          'Larger larvae make irregular holes in the leaves or eat the leaves completely.', 
+          'Defoliation, blighting, and drying of onion leaves.'],
+        treatmentRecommendations: [
+          {
+            category: 'Cultural Control',
+            methods: [
+              'Field Sanitation',
+              'Plow under the plant residue to reduce the population of the pests in the area.',
+              'Plant trap crops like sunflower or taro plants around the area.'
+            ]
+          },
+          {
+            category: 'Biological Control Agents (BCAs)',
+            methods: [
+              'Release egg parasitoids (Trichogramma sp.) and predators such as earwig.',
+              'Use entomopathogens (M. anisopliae) and Nucleopolyhedrosis virus (NPV).'
+            ]
+          },
+          {
+            category: 'Chemical Control',
+            methods: [
+              'Use FPA-registered pesticides following the manufacturer’s recommendation.',
+              'Avoid excessive use of chemicals to prevent pesticide resistance.'
+            ]
+          }
+        ]
       },
       Cutworm: {
         title: 'Cutworm',
         order: 'Lepidoptera',
         family: 'Noctuidae',
-        species: 'Agrotis spp.',
-        damageCharacteristics: 'Cuts stems at soil level; feeds on roots and leaves.',
-        treatmentRecommendations: 'Use collars around seedlings; apply insecticides at dusk.',
+        species: 'Spodoptera exigua',
+        damageCharacteristics: [
+          'Feeding damage on tassels.', 
+          'Window-pane damage by younger instars on leaves.', 
+          'Larvae cutting off seedling at ground level by chewing through the stem.', 
+          'Foliar damage is usually characterized by ragged feeding and moist sawdust-like frass near the whorl and upper leaves of the plant.'],
+        treatmentRecommendations: [
+          {
+            category: 'Cultural Control',
+            methods: [
+              'Crop rotation',
+              'Plowing under stubbles after harvest.',
+              'Practice synchronous planting within the cluster area.',
+              'Practice proper field sanitation to destroy weeds that serves as an alternate host.',
+              'Collection and crushing of egg masses and larvae.'
+            ]
+          },
+          {
+            category: 'Biological Control Agents (BCAs)',
+            methods: [
+              'Release of predators (earwig and lacewing), parasitoids (Trichogramma), and entomopathogenic nematode (EPN).',
+              'Use of entomopathogenic fungi like Metarhizium anisopliae and Beauveria bassiana.',
+              'Use of nucleo polyhedrosis virus (NPV).'
+            ]
+          },
+          {
+            category: 'Chemical Control',
+            methods: [
+              'Use of FPA-registered pesticides following the manufacturer’s recommendation.',
+              'Avoid excessive use of chemicals to prevent the development of pesticide resistance.'
+            ]
+          }
+        ]
       },
       Red_Spider_Mites: {
         title: 'Red Spider Mites',
-        order: 'Acari',
+        order: 'Trombidiformes',
         family: 'Tetranychidae',
-        species: 'Tetranychus urticae',
-        damageCharacteristics: 'Sucks sap, causing stippling, yellowing, and webbing on leaves.',
-        treatmentRecommendations: 'Use miticides; increase humidity; introduce predatory mites.',
+        species: 'Tetranychus evansi',
+        damageCharacteristics: [
+          'Feeding causes whitening or yellowing of leaves, which dry out and eventually fall off.', 
+          'In severe attacks, hosts may die within 3-5 weeks, if no management actions are taken.', 
+          'In less intense infestations, the top side of the leaves appear speckled, as result of sucking plant juices.'],
+        treatmentRecommendations: [
+          {
+            category: 'Cultural Control',
+            methods: [
+              'Field Sanitation by removing debris from previous cropping season.',
+              'Remove weeds especially alternate hosts.',
+              'Practice crop rotation.',
+              'Observe proper planting distance and intercrop with non-host crops.',
+              'Regularly water plants to reduce the stress on them, as stressed plants are more susceptible to pest damage.'
+            ]
+          },
+          {
+            category: 'Biological Control Agents (BCAs)',
+            methods: [
+              'Use of B. bassiana.',
+              'Release of predators such as ladybugs and green lacewing larvae.',
+              'Release of predatory mites like Amblyseius andersoni.'
+            ]
+          },
+          {
+            category: 'Chemical Control',
+            methods: [
+              'Use of FPA-registered pesticides following the manufacturer’s recommendation.',
+              'Avoid excessive use of chemicals to prevent the development of pesticide resistance.'
+            ]
+          }
+        ]
       },
+      Others: {
+        title: 'Unidentified',
+        order: 'Unknown',
+        family: 'Unknown',
+        species: 'Unknown',
+        damageCharacteristics: 'No known damage; likely not a pest.',
+        treatmentRecommendations: 'No treatment needed.',
+      }
     };
     return pestDetails[predictedClass] || {
       title: predictedClass,
@@ -182,46 +351,41 @@ const OnionScanApp = ({ navigation }) => {
     };
   };
 
-  const savePrediction = async (pestDetails, latitude, longitude) => {
+  const savePrediction = async (pestDetails, latitude, longitude, locationAddress) => {
     try {
       if (!userId) {
-        Alert.alert('Error', 'User not authenticated.');
+        showCustomAlert('Error', 'User not authenticated.');
         return;
       }
 
       const farmerName = await getFarmerName(userId);
-
       const now = new Date();
       const date = now.toISOString().split('T')[0];
       const time = now.toTimeString().split(' ')[0];
+      const generatedId = Date.now().toString();
 
       const scanData = {
-        id: Date.now().toString(),
+        id: generatedId,
         result: pestDetails.title,
+        confidence: pestDetails.confidence,
         date,
         time,
         image: pestDetails.image,
         latitude,
         longitude,
+        locationAddress,
         details: pestDetails,
         farmerName,
         userId,
+        verificationStatus: "Pending"
       };
 
-      // Save locally
-      const existingScans = await AsyncStorage.getItem('scannedPests');
-      const scans = existingScans ? JSON.parse(existingScans) : [];
-      scans.push(scanData);
-      await AsyncStorage.setItem('scannedPests', JSON.stringify(scans));
+      await setDoc(doc(db, 'pestScans', generatedId), scanData);
 
-      // Save to Firestore
-      await addDoc(collection(db, 'pestScans'), scanData);
-
-      console.log('Prediction saved locally and to Firestore:', scanData);
-      Alert.alert('Success', 'Prediction saved successfully.');
+      return generatedId;
     } catch (error) {
       console.error('Error saving prediction:', error);
-      Alert.alert('Save Error', 'Failed to save prediction: ' + error.message);
+      showCustomAlert('Save Error', 'Failed to save prediction: ' + error.message);
     }
   };
 
@@ -255,45 +419,46 @@ const OnionScanApp = ({ navigation }) => {
 
       return result;
     } catch (error) {
-      Alert.alert('Prediction Error', error.message);
+      showCustomAlert('Prediction Error', error.message);
       return null;
     }
   };
 
-const handleImageSelection = async (imageUri) => {
-  const locationResult = await requestLocationPermission();
-  if (!locationResult.granted) return;
+  const handleImageSelection = async (imageUri) => {
+    const locationResult = await requestLocationPermission();
+    if (!locationResult.granted) return;
 
-  const { latitude, longitude } = locationResult;
+    const { latitude, longitude } = locationResult;
+    setLoading(true);
 
-  setLoading(true); // Start loading
+    try {
+      const locationAddress = await getAddressFromCoords(latitude, longitude);
+      const uploadedImageUrl = await uploadToCloudinary(imageUri);
+      const prediction = await callPredictionAPI(uploadedImageUrl, latitude, longitude);
 
-  try {
-    // 🔼 Upload image to Cloudinary
-    const uploadedImageUrl = await uploadToCloudinary(imageUri);
+      if (prediction) {
+        const pestDetails = getPestDetails(prediction.predicted_class);
+        pestDetails.image = uploadedImageUrl;
+        pestDetails.latitude = latitude;
+        pestDetails.longitude = longitude;
+        pestDetails.confidence = (prediction.confidence * 100).toFixed(2) + '%';
+        pestDetails.locationAddress = locationAddress;
 
-    // 🔮 Get prediction using Cloudinary URL
-    const prediction = await callPredictionAPI(uploadedImageUrl, latitude, longitude);
-
-    if (prediction) {
-      const pestDetails = getPestDetails(prediction.predicted_class);
-      pestDetails.image = uploadedImageUrl; // Use the Cloudinary URL
-      pestDetails.latitude = latitude;
-      pestDetails.longitude = longitude;
-
-      await savePrediction(pestDetails, latitude, longitude);
-      navigation.navigate('ResultScreen', { item: pestDetails });
+        const id = await savePrediction(pestDetails, latitude, longitude, locationAddress);
+        if (id) {
+          navigation.navigate('ResultScreen', { item: id });
+        }
+      }
+    } catch (error) {
+      showCustomAlert('Error', error.message);
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    Alert.alert('Error', error.message);
-  } finally {
-    setLoading(false); // End loading
-  }
-};
+  };
 
   const handleCapturePest = async () => {
     if (!hasCameraPermission) {
-      Alert.alert('Error', 'Camera permission not granted');
+      showCustomAlert('Error', 'Camera permission not granted');
       return;
     }
 
@@ -310,7 +475,7 @@ const handleImageSelection = async (imageUri) => {
 
   const handleSelectFromGallery = async () => {
     if (!hasMediaPermission) {
-      Alert.alert('Error', 'Media library permission not granted');
+      showCustomAlert('Error', 'Media library permission not granted');
       return;
     }
 
@@ -342,7 +507,7 @@ const handleImageSelection = async (imageUri) => {
               resizeMode="contain"
             />
           </View>
-          <Text style={styles.welcome}>Welcome back, User!</Text>
+          <Text style={styles.welcome}>Welcome back, {farmerName}!</Text>
           <Text style={styles.subtitle}>Scan pest to protect your crops.</Text>
         </View>
 
@@ -375,14 +540,38 @@ const handleImageSelection = async (imageUri) => {
         </View>
       </ScrollView>
 
-            {/* Loading Indicator Overlay */}
+      {/* Loading Indicator Overlay */}
       <Modal transparent={true} animationType="fade" visible={loading}>
         <View style={styles.loadingOverlay}>
-          <View style={styles.spinnerContainer}></View>
-          <ActivityIndicator size="large" color="#7a1f6f" style={styles.spinner} />
-          <Text style={styles.loadingText}>Analyzing image. Please Wait....</Text>
+          <View style={styles.spinnerContainer}>
+            <Image
+              source={require('../assets/logo.png')} 
+              resizeMode="contain"
+              style={styles.onionGif}
+            />
+            <ActivityIndicator size="large" color="#7a1f6f" style={styles.spinner} />
+            <Text style={styles.loadingText}>
+              {loadingMessages[loadingStep]}
+            </Text>
+          </View>
         </View>
       </Modal>
+
+      {/* Awesome Alert */}
+      <AwesomeAlert
+        show={showAlert}
+        showProgress={false}
+        title={alertTitle}
+        message={alertMessage}
+        closeOnTouchOutside={true}
+        closeOnHardwareBackPress={true}
+        showConfirmButton={true}
+        confirmText="OK"
+        confirmButtonColor="#7a1f6f"
+        onConfirmPressed={() => {
+          setShowAlert(false);
+        }}
+      />
     </View>
   );
 };
@@ -390,12 +579,12 @@ const handleImageSelection = async (imageUri) => {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#f2f7f5',
   },
   container: {
     paddingHorizontal: 20,
-    paddingTop: 40,
-    paddingBottom: 30,
+    paddingTop: 10,
+    paddingBottom: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -403,27 +592,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  headerRow: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  logo: {
-    width: 80,
-    height: 80,
-    marginBottom: 10,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#7a1f6f',
-    marginLeft: 10,
-  },
   welcome: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: '#4a5a00',
-    marginBottom: 4,
+    marginBottom: 1,
   },
   subtitle: {
     fontSize: 14,
@@ -432,18 +605,23 @@ const styles = StyleSheet.create({
   },
   main: {
     width: '100%',
-    marginTop: 10,
+    marginTop: 1,
     alignItems: 'center',
   },
   actionButton: {
     width: '100%',
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: '#666',
     borderRadius: 10,
     backgroundColor: '#fff',
     paddingVertical: 20,
     alignItems: 'center',
     marginBottom: 16,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
   },
   buttonText: {
     fontSize: 15,
@@ -459,6 +637,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     marginBottom: 8,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
   },
   libraryButtonText: {
     fontSize: 15,
@@ -484,17 +667,36 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     resizeMode: 'contain',
-    },
+  },
   loadingOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  spinnerContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingVertical: 30,
+    paddingHorizontal: 40,
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 10,
+    shadowRadius: 100,
+  },
   loadingText: {
-    marginTop: 10,
-    color: '#fff',
+    marginTop: 20,
     fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  onionGif: {
+    width: 160,
+    height: 160,
+    marginBottom: 20,
   },
 });
 

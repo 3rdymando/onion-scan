@@ -16,6 +16,7 @@ import LibraryScreen from './components/LibraryScreen.js';
 import ResultScreen from './components/ResultScreen.js';
 import ScannedScreen from './components/ScannedScreen.js';
 import ProfileScreen from './components/ProfileScreen.js';
+import LibraryDetailScreen from './components/LibraryDetailScreen.js'
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -111,6 +112,7 @@ export default function App() {
           <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ title: 'Forgot Password' }} />
           <Stack.Screen name="Dashboard" component={DashboardTabNavigator} options={{ headerShown: false }} />
           <Stack.Screen name="ResultScreen" component={ResultScreen} options={{ title: 'Pest Details' }} />
+          <Stack.Screen name="LibraryDetailScreen" component={LibraryDetailScreen} options={{ title: 'Library Details' }}/>
         </Stack.Navigator>
       </NavigationContainer>
     </>
@@ -119,7 +121,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   statusBar: {
-    height: 40,
+    height: 30,
     width: '100%',
     zIndex: 999,
   },

@@ -27,7 +27,7 @@ export default FrontPage2;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#f2f7f5',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
@@ -57,6 +57,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     marginTop: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
   },
   startButtonText: {
     color: 'white',

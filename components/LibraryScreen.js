@@ -17,7 +17,7 @@ const DATA = [
     title: 'Armyworm',
     order: 'Lepidoptera',
     family: 'Noctuidae',
-    species: 'Mythimna unipuncta',
+    species: 'Spodoptera frugiperda',
     filipinoNames: 'N/A',
     stagesOfDevelopment: 'Egg, Larva, Pupa, Adult',
     damageCharacteristics: 'Chews leaves, causing irregular holes; can defoliate crops.',
@@ -30,7 +30,7 @@ const DATA = [
     title: 'Cutworm',
     order: 'Lepidoptera',
     family: 'Noctuidae',
-    species: 'Agrotis spp.',
+    species: 'Spodoptera exigua',
     filipinoNames: 'N/A',
     stagesOfDevelopment: 'Egg, Larva, Pupa, Adult',
     damageCharacteristics: 'Cuts stems at soil level; feeds on roots and leaves.',
@@ -41,9 +41,9 @@ const DATA = [
   {
     id: '3',
     title: 'Red Spider Mites',
-    order: 'Acari',
+    order: 'Trombidiformes',
     family: 'Tetranychidae',
-    species: 'Tetranychus urticae',
+    species: 'Tetranychus evansi',
     filipinoNames: 'N/A',
     stagesOfDevelopment: 'Egg, Larva, Nymph, Adult',
     damageCharacteristics: 'Sucks sap, causing stippling, yellowing, and webbing on leaves.',
@@ -51,7 +51,60 @@ const DATA = [
     image:
       'https://www.ignitionseeds.co.nz/cdn/shop/files/red_spider_mite_main.webp?v=1681245160&width=1500',
   },
+  {
+    id: '4',
+    title: 'Thrips',
+    order: 'Thysanoptera',
+    family: 'Thripidae',
+    species: 'Thrips tabaci',
+    filipinoNames: 'Trips',
+    stagesOfDevelopment: 'Egg, Nymph, Adult',
+    damageCharacteristics: 'Scrapes leaf surfaces and sucks sap, causing silvery streaks and curling; reduces bulb size.',
+    treatmentRecommendations: 'Use reflective mulches, apply insecticidal soap or neem oil, and avoid excessive nitrogen fertilizer.',
+    image:
+      'https://www.koppert.com/content/_processed_/5/1/csm_onion_thrips_thrips_tabaci_damage_female_2_koppert_99927ac87b.jpg'
+  },
+  {
+    id: '5',
+    title: 'Maggot',
+    order: 'Diptera',
+    family: 'Anthomyiidae',
+    species: 'Delia antiqua',
+    filipinoNames: 'N/A',
+    stagesOfDevelopment: 'Egg, Larva, Pupa, Adult',
+    damageCharacteristics: 'Larvae tunnel into bulbs and roots, causing wilting and rotting of plants.',
+    treatmentRecommendations: 'Practice crop rotation; remove infested bulbs; use row covers and soil insecticides.',
+    image:
+      'https://environmentalfactor.com/wp-content/uploads/2023/02/ONION-MAGGOT-2.jpg'
+  },
+  {
+    id: '6',
+    title: 'Leaf Miner',
+    order: 'Diptera',
+    family: 'Agromyzidae',
+    species: 'Liriomyza spp.',
+    filipinoNames: 'Mina-mina',
+    stagesOfDevelopment: 'Egg, Larva, Pupa, Adult',
+    damageCharacteristics: 'Larvae create serpentine mines in leaves, reducing photosynthesis and plant vigor.',
+    treatmentRecommendations: 'Remove mined leaves; use yellow sticky traps; introduce parasitoid wasps; apply selective insecticides if needed.',
+    image:
+      'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTtBk9v9qIpMfMV-vUVYsKe7ycsXOx5_Yf4BA&s'
+  },
+  {
+    id: '7',
+    title: 'Aphids',
+    order: 'Hemiptera',
+    family: 'Aphididae',
+    species: 'Aphis fabae / Myzus persicae',
+    filipinoNames: 'Dapdap / Lumot',
+    stagesOfDevelopment: 'Egg, Nymph, Adult',
+    damageCharacteristics: 'Suck plant sap, causing curling, yellowing, and stunted growth; can transmit viral diseases.',
+    treatmentRecommendations: 'Spray with insecticidal soap or neem oil; encourage natural predators like lady beetles; avoid excessive nitrogen fertilizer.',
+    image:
+      'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS0DECxJUVpKgOmjPER_4Gnfh2rzhV4tXRwqA&s'
+  },
 ];
+
 
 const Item = ({ item, onPress }) => (
   <TouchableOpacity onPress={onPress} style={styles.item}>
@@ -81,7 +134,7 @@ const LibraryScreen = ({ navigation }) => {
   };
 
   const handlePress = (item) => {
-    navigation.navigate('ResultScreen', { item });
+    navigation.navigate('LibraryDetailScreen', { item });
   };
 
   return (
@@ -134,12 +187,12 @@ const LibraryScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#f2f7f5',
     paddingHorizontal: 8,
   },
   logoContainer: {
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 0,
     marginBottom: 0,
   },
   libraryTitle: {
@@ -165,16 +218,21 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-    borderRadius: 20,
-    paddingHorizontal: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 25,
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    marginHorizontal: 4,
+    marginRight: 10,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
-    color: '#2D3748',
+    fontSize: 15,
+    color: '#2f3e46',
   },
   item: {
     flexDirection: 'row',

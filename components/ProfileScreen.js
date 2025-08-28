@@ -1,14 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { getAuth, signOut} from 'firebase/auth';
+import { getAuth, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase.js';
+import AwesomeAlert from 'react-native-awesome-alerts';
 
 export default function ProfileScreen() {
   const navigation = useNavigation();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+
+  // Alert states
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+  const [showCancelButton, setShowCancelButton] = useState(false);
+  const [confirmText, setConfirmText] = useState('OK');
+  const [onConfirmAction, setOnConfirmAction] = useState(null);
+
+  const showCustomAlert = (
+    title,
+    message,
+    options = { confirmText: 'OK', cancel: false, onConfirm: null }
+  ) => {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setConfirmText(options.confirmText || 'OK');
+    setShowCancelButton(!!options.cancel);
+    setOnConfirmAction(() => options.onConfirm || (() => {}));
+    setShowAlert(true);
+  };
 
   useEffect(() => {
     const auth = getAuth();
@@ -38,14 +60,24 @@ export default function ProfileScreen() {
     fetchUserData();
   }, [navigation]);
 
-  const handleLogout = async () => {
-    const auth = getAuth();
-    try {
-      await signOut(auth);
-      navigation.navigate('FrontPage');
-    } catch (error) {
-      Alert.alert('Logout failed', error.message);
-    }
+  const handleLogout = () => {
+    showCustomAlert(
+      'Confirm Logout',
+      'Are you sure you want to log out?',
+      {
+        confirmText: 'Logout',
+        cancel: true,
+        onConfirm: async () => {
+          const auth = getAuth();
+          try {
+            await signOut(auth);
+            navigation.navigate('FrontPage');
+          } catch (error) {
+            showCustomAlert('Logout failed', error.message);
+          }
+        }
+      }
+    );
   };
 
   return (
@@ -60,6 +92,31 @@ export default function ProfileScreen() {
       <TouchableOpacity style={styles.button} onPress={handleLogout}>
         <Text style={styles.buttonText}>Logout</Text>
       </TouchableOpacity>
+
+      {/* Awesome Alert for logout confirmation */}
+      <AwesomeAlert
+        show={showAlert}
+        showProgress={false}
+        title={alertTitle}
+        message={alertMessage}
+        closeOnTouchOutside={false}
+        closeOnHardwareBackPress={false}
+        showConfirmButton={true}
+        showCancelButton={showCancelButton}
+        confirmText={confirmText}
+        confirmButtonColor="#7a1f6f"
+        cancelButtonColor="#999"
+        onCancelPressed={() => setShowAlert(false)}
+        onConfirmPressed={async () => {
+          const action = onConfirmAction;
+          setShowAlert(false);
+          if (action) {
+            setTimeout(() => {
+              action();
+            }, 300);
+          }
+        }}
+      />
     </View>
   );
 }
@@ -69,7 +126,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#f2f7f5',
   },
   avatar: {
     width: 300,
@@ -95,6 +152,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '80%',
     marginVertical: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
   },
   buttonText: {
     color: '#FFF',

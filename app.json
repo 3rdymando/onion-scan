@@ -1,18 +1,14 @@
 {
   "expo": {
     "name": "Onion Scan",
-<<<<<<< HEAD
     "slug": "onionscan",
-=======
-    "slug": "onion-scan",
->>>>>>> 8329ad4fc1cb7200bd2702af0b2b60759ba4345e
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/logo1.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -21,15 +17,14 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
+        "foregroundImage": "./assets/logo1.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "onion.scan"
+      "package": "com.qjbferrer.onionscan"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-<<<<<<< HEAD
     "extra": {
       "eas": {
         "projectId": "1e38c920-4fd3-43e0-8768-06da332630c6"
@@ -39,16 +34,5 @@
       "expo-font"
     ],
     "owner": "qjbferrer"
-=======
-    "plugins": [
-      "expo-font"
-    ],
-    "owner": "3rdy",
-    "extra": {
-      "eas": {
-        "projectId": "171e63b8-0dcb-4f89-9ec6-2b727851920c"
-      }
-    }
->>>>>>> 8329ad4fc1cb7200bd2702af0b2b60759ba4345e
   }
 }
