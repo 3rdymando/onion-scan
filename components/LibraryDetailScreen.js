@@ -71,7 +71,7 @@ export default function LibraryDetailScreen({ route }) {
 
         {/* Image */}
         <View style={styles.imageContainer}>
-          <Image source={{ uri: item.image }} style={styles.resultImage} />
+          <Image source={item.image} style={styles.resultImage} />
         </View>
 
         {/* Details */}

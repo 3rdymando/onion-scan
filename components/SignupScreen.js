@@ -42,13 +42,13 @@ export default function SignupScreen({ navigation }) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      await setDoc(doc(db, 'users', user.uid), {
-        name,
-        email,
-        contactNumber,
-        sex,
-        createdAt: new Date(),
-      });
+  await setDoc(doc(db, 'users', user.uid), {
+    name,
+    email,
+    contactNumber,
+    sex: sex || 'Male',   // fallback to Male if empty
+    createdAt: new Date(),
+  });
 
       showCustomAlert('Success', 'Account created successfully!', () => {
         setShowAlert(false);

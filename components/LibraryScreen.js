@@ -14,42 +14,42 @@ import { FontAwesome } from '@expo/vector-icons'; // make sure you have this ins
 const DATA = [
   {
     id: '1',
-    title: 'Armyworm',
-    order: 'Lepidoptera',
-    family: 'Noctuidae',
-    species: 'Spodoptera frugiperda',
-    filipinoNames: 'N/A',
-    stagesOfDevelopment: 'Egg, Larva, Pupa, Adult',
-    damageCharacteristics: 'Chews leaves, causing irregular holes; can defoliate crops.',
-    treatmentRecommendations: 'Use Bacillus thuringiensis (Bt) or chemical insecticides; remove crop debris.',
-    image:
-      'https://www.cabidigitallibrary.org/cms/10.1079/cabicompendium.29809/asset/75a46b5e-469f-4dbf-afe3-1d9cf12f5ce4/assets/graphic/laphex03.jpeg'
-  },
-  {
-    id: '2',
-    title: 'Cutworm',
+    title: 'Onion Armyworm',
     order: 'Lepidoptera',
     family: 'Noctuidae',
     species: 'Spodoptera exigua',
     filipinoNames: 'N/A',
     stagesOfDevelopment: 'Egg, Larva, Pupa, Adult',
+    damageCharacteristics: 'Chews leaves, causing irregular holes; can defoliate crops.',
+    treatmentRecommendations: 'Use Bacillus thuringiensis (Bt) or chemical insecticides; remove crop debris.',
+    image:
+      require('../assets/onion_armyworm.jpg'),
+  },
+  {
+    id: '2',
+    title: 'Fall Armyworm',
+    order: 'Lepidoptera',
+    family: 'Noctuidae',
+    species: 'Spodoptera frugiperda',
+    filipinoNames: 'N/A',
+    stagesOfDevelopment: 'Egg, Larva, Pupa, Adult',
     damageCharacteristics: 'Cuts stems at soil level; feeds on roots and leaves.',
     treatmentRecommendations: 'Use collars around seedlings; apply insecticides at dusk.',
     image:
-      'https://extension.umn.edu/sites/extension.umn.edu/files/glassy-cutworm.jpg',
+      require('../assets/fall_armyworm.jpg'),
   },
   {
     id: '3',
-    title: 'Red Spider Mites',
-    order: 'Trombidiformes',
-    family: 'Tetranychidae',
-    species: 'Tetranychus evansi',
+    title: 'Cutworm',
+    order: 'Lepidoptera',
+    family: 'Noctuidae',
+    species: 'Spodoptera litura',
     filipinoNames: 'N/A',
     stagesOfDevelopment: 'Egg, Larva, Nymph, Adult',
     damageCharacteristics: 'Sucks sap, causing stippling, yellowing, and webbing on leaves.',
     treatmentRecommendations: 'Use miticides; increase humidity; introduce predatory mites.',
     image:
-      'https://www.ignitionseeds.co.nz/cdn/shop/files/red_spider_mite_main.webp?v=1681245160&width=1500',
+      require('../assets/cutworm.jpg'),
   },
   {
     id: '4',
@@ -62,7 +62,7 @@ const DATA = [
     damageCharacteristics: 'Scrapes leaf surfaces and sucks sap, causing silvery streaks and curling; reduces bulb size.',
     treatmentRecommendations: 'Use reflective mulches, apply insecticidal soap or neem oil, and avoid excessive nitrogen fertilizer.',
     image:
-      'https://www.koppert.com/content/_processed_/5/1/csm_onion_thrips_thrips_tabaci_damage_female_2_koppert_99927ac87b.jpg'
+      require('../assets/thrips.jpg'),
   },
   {
     id: '5',
@@ -75,7 +75,7 @@ const DATA = [
     damageCharacteristics: 'Larvae tunnel into bulbs and roots, causing wilting and rotting of plants.',
     treatmentRecommendations: 'Practice crop rotation; remove infested bulbs; use row covers and soil insecticides.',
     image:
-      'https://environmentalfactor.com/wp-content/uploads/2023/02/ONION-MAGGOT-2.jpg'
+      require('../assets/maggots.jpg'),
   },
   {
     id: '6',
@@ -88,7 +88,7 @@ const DATA = [
     damageCharacteristics: 'Larvae create serpentine mines in leaves, reducing photosynthesis and plant vigor.',
     treatmentRecommendations: 'Remove mined leaves; use yellow sticky traps; introduce parasitoid wasps; apply selective insecticides if needed.',
     image:
-      'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTtBk9v9qIpMfMV-vUVYsKe7ycsXOx5_Yf4BA&s'
+      require('../assets/leafminer.png'),
   },
   {
     id: '7',
@@ -101,14 +101,13 @@ const DATA = [
     damageCharacteristics: 'Suck plant sap, causing curling, yellowing, and stunted growth; can transmit viral diseases.',
     treatmentRecommendations: 'Spray with insecticidal soap or neem oil; encourage natural predators like lady beetles; avoid excessive nitrogen fertilizer.',
     image:
-      'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS0DECxJUVpKgOmjPER_4Gnfh2rzhV4tXRwqA&s'
+      require('../assets/aphids.jpg'),
   },
 ];
 
-
 const Item = ({ item, onPress }) => (
   <TouchableOpacity onPress={onPress} style={styles.item}>
-    <Image source={{ uri: item.image }} style={styles.image} />
+    <Image source={item.image} style={styles.image} />
     <View style={styles.infoContainer}>
       <Text style={styles.title}>{item.title}</Text>
       <Text style={styles.species}>{item.species}</Text>

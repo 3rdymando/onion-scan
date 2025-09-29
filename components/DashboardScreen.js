@@ -20,20 +20,23 @@ import { collection, addDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import axios from 'axios';
 import AwesomeAlert from 'react-native-awesome-alerts';  // NEW
+import { ImageEditor } from "expo-dynamic-image-crop";
+
 
 const getAddressFromCoords = async (lat, lng) => {
   const accessToken = 'pk.eyJ1IjoicWpiZmVycmVyIiwiYSI6ImNtYTlqbDEyaTBrYnUya3BzeHd4ZWFnOXMifQ.PeNfgVuGD53Au8Vmkpe2RQ';
   try {
     const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${accessToken}`
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=address,poi&limit=3&country=ph&proximity=${lng},${lat}&access_token=${accessToken}`
     );
+
     const data = await response.json();
-    if (
-      data.features &&
-      data.features.length > 0 &&
-      data.features[0].place_name
-    ) {
-      return data.features[0].place_name;
+    if (data.features && data.features.length > 0) {
+      const best = data.features
+        .filter(f => f.relevance > 0.8)
+        .sort((a, b) => b.relevance - a.relevance)[0];
+
+      return best ? best.place_name : data.features[0].place_name;
     } else {
       return 'Unknown Location';
     }
@@ -96,6 +99,10 @@ const OnionScanApp = ({ navigation }) => {
   const [locationPermissionStatus, setLocationPermissionStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState(null);
+
+  // NEW state for cropping
+  const [isEditing, setIsEditing] = useState(false);
+  const [pendingImage, setPendingImage] = useState(null);
 
   // NEW: farmer name
   const [farmerName, setFarmerName] = useState('');
@@ -223,8 +230,8 @@ const OnionScanApp = ({ navigation }) => {
       predictedClass = 'Others';
     }
     const pestDetails = {
-      Armyworm: {
-        title: 'Armyworm',
+      "Onion Armyworm-20250929T104610Z-1-001": {
+        title: 'Onion Armyworm',
         order: 'Lepidoptera',
         family: 'Noctuidae',
         species: 'Spodoptera frugiperda',
@@ -257,8 +264,8 @@ const OnionScanApp = ({ navigation }) => {
           }
         ]
       },
-      Cutworm: {
-        title: 'Cutworm',
+      "fall_armyworm-20250927T104004Z-1-001": {
+        title: 'Fall Armyworm',
         order: 'Lepidoptera',
         family: 'Noctuidae',
         species: 'Spodoptera exigua',
@@ -295,44 +302,44 @@ const OnionScanApp = ({ navigation }) => {
           }
         ]
       },
-      Red_Spider_Mites: {
-        title: 'Red Spider Mites',
-        order: 'Trombidiformes',
-        family: 'Tetranychidae',
-        species: 'Tetranychus evansi',
+      "cutworm-20250927T104004Z-1-001": {
+        title: 'Cutworm',
+        order: 'Lepidoptera',
+        family: 'Noctuidae',
+        species: 'Spodoptera litura',
         damageCharacteristics: [
-          'Feeding causes whitening or yellowing of leaves, which dry out and eventually fall off.', 
-          'In severe attacks, hosts may die within 3-5 weeks, if no management actions are taken.', 
-          'In less intense infestations, the top side of the leaves appear speckled, as result of sucking plant juices.'],
+          'Young plants are completely defoliated.', 
+          'Early cutworm feeding may include holes chewed in leaves.', 
+          'Leaf margins appear ragged.', 
+          'In high infestation, stem, leaves, and host crops are almost consumed.'],
         treatmentRecommendations: [
           {
             category: 'Cultural Control',
             methods: [
-              'Field Sanitation by removing debris from previous cropping season.',
-              'Remove weeds especially alternate hosts.',
-              'Practice crop rotation.',
-              'Observe proper planting distance and intercrop with non-host crops.',
-              'Regularly water plants to reduce the stress on them, as stressed plants are more susceptible to pest damage.'
+              'Crop rotation and plow fields to remove weeds which may serve as alternate hosts.',
+              'Use of resistant varieties.'
             ]
           },
           {
             category: 'Biological Control Agents (BCAs)',
             methods: [
-              'Use of B. bassiana.',
-              'Release of predators such as ladybugs and green lacewing larvae.',
-              'Release of predatory mites like Amblyseius andersoni.'
+              'Release 70 cards of T. chilonis per hectara. Repeat application after 1 week.',
+              'Release 10,000 earwig adults (Euborella annulata) per hectare.',
+              'Use 25-30 bags (400 grams/bag) of N. anisopliae and B. bassiana per hectare.',
+              'Use 10 bottles (10pc/bot) of nucleo polyhedrosis virus (NPV).'
             ]
           },
           {
             category: 'Chemical Control',
             methods: [
+              'Use of Bt corn hybrids.',
               'Use of FPA-registered pesticides following the manufacturer’s recommendation.',
               'Avoid excessive use of chemicals to prevent the development of pesticide resistance.'
             ]
           }
         ]
       },
-      Others: {
+      "non_pest_images_random-20250927T104009Z-1-001": {
         title: 'Unidentified',
         order: 'Unknown',
         family: 'Unknown',
@@ -467,9 +474,10 @@ const OnionScanApp = ({ navigation }) => {
       quality: 1,
     });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
+    if (!result.canceled && result.assets?.length > 0) {
       const imageUri = result.assets[0].uri;
-      handleImageSelection(imageUri);
+      setPendingImage(imageUri);   // 👈 open editor instead
+      setIsEditing(true);
     }
   };
 
@@ -484,14 +492,18 @@ const OnionScanApp = ({ navigation }) => {
       quality: 1,
     });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
+    if (!result.canceled && result.assets?.length > 0) {
       const imageUri = result.assets[0].uri;
-      handleImageSelection(imageUri);
+      setPendingImage(imageUri);   // 👈 open editor instead
+      setIsEditing(true);
     }
   };
 
-  const handleOpenLibrary = () => {
-    navigation.navigate('Library');
+  // NEW: crop complete
+  const handleCropComplete = (croppedImageData) => {
+    setIsEditing(false);
+    setPendingImage(null);
+    handleImageSelection(croppedImageData.uri); // continue pipeline
   };
 
   return (
@@ -528,7 +540,7 @@ const OnionScanApp = ({ navigation }) => {
 
           <TouchableOpacity
             style={styles.libraryButton}
-            onPress={handleOpenLibrary}
+            onPress={() => navigation.navigate('Library')}
           >
             <Text style={styles.libraryButtonText}>
               ONION PEST OFFLINE LIBRARY
@@ -539,6 +551,21 @@ const OnionScanApp = ({ navigation }) => {
           </Text>
         </View>
       </ScrollView>
+
+      {/* --- CROPPER --- */}
+      {pendingImage && (
+        <ImageEditor
+          isVisible={isEditing}
+          imageUri={pendingImage}
+          onEditingComplete={handleCropComplete}
+          onEditingCancel={() => {
+            setPendingImage(null);
+            setIsEditing(false);
+          }}
+          fixedAspectRatio={0}
+          dynamicCrop={true}
+        />
+      )}
 
       {/* Loading Indicator Overlay */}
       <Modal transparent={true} animationType="fade" visible={loading}>
