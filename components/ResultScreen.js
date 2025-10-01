@@ -190,8 +190,8 @@ export default function ResultScreen({ route, navigation }) {
           <View style={styles.detailBlock}>
             <Text style={styles.detailTitle}>LOCATION (LAT, LONG):</Text>
             <Text style={styles.detailText}>
-              {scanData.latitude ? scanData.latitude.toFixed(6) : 'N/A'},{' '}
-              {scanData.longitude ? scanData.longitude.toFixed(6) : 'N/A'}
+              {scanData.latitude ? scanData.latitude : 'N/A'},{' '}
+              {scanData.longitude ? scanData.longitude : 'N/A'}
             </Text>
           </View>
         </View>

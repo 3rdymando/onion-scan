@@ -217,8 +217,8 @@ export default function ScannedScreen({ navigation }) {
                 </Text>
                 <Text style={styles.detailText}>
                   LOCATION: <Text style={{ fontWeight: 'normal' }}>
-                    {item.latitude ? item.latitude.toFixed(6) : 'N/A'},{' '}
-                    {item.longitude ? item.longitude.toFixed(6) : 'N/A'}
+                    {item.latitude ? item.latitude : 'N/A'},{' '}
+                    {item.longitude ? item.longitude : 'N/A'}
                   </Text>
                 </Text>
               </View>
