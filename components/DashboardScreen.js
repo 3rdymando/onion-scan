@@ -226,11 +226,11 @@ const OnionScanApp = ({ navigation }) => {
   };
 
   const getPestDetails = (predictedClass) => {
-    if (predictedClass === 'non_pest_images_random') {
-      predictedClass = 'Others';
+    if (predictedClass === 'unidentified') {
+      predictedClass = 'unidentified';
     }
     const pestDetails = {
-      "Onion Armyworm-20250929T104610Z-1-001": {
+      "onion_armyworm": {
         title: 'Onion Armyworm',
         order: 'Lepidoptera',
         family: 'Noctuidae',
@@ -264,7 +264,7 @@ const OnionScanApp = ({ navigation }) => {
           }
         ]
       },
-      "fall_armyworm-20250927T104004Z-1-001": {
+      "fall_armyworm": {
         title: 'Fall Armyworm',
         order: 'Lepidoptera',
         family: 'Noctuidae',
@@ -302,7 +302,7 @@ const OnionScanApp = ({ navigation }) => {
           }
         ]
       },
-      "cutworm-20250927T104004Z-1-001": {
+      "cutworm": {
         title: 'Cutworm',
         order: 'Lepidoptera',
         family: 'Noctuidae',
@@ -339,7 +339,7 @@ const OnionScanApp = ({ navigation }) => {
           }
         ]
       },
-      "non_pest_images_random-20250927T104009Z-1-001": {
+      "unidentified": {
         title: 'Unidentified',
         order: 'Unknown',
         family: 'Unknown',
