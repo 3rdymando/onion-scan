@@ -91,6 +91,78 @@ const getFarmerName = async (userId) => {
   }
 };
 
+// NEW: Extract location from image EXIF data
+const getLocationFromImageExif = async (imageUri) => {
+  try {
+    console.log('Attempting to extract location from URI:', imageUri);
+    
+    // Try to get asset info directly from the URI
+    const permission = await MediaLibrary.requestPermissionsAsync();
+    if (permission.status !== 'granted') {
+      console.log('Media library permission not granted');
+      return { hasLocation: false };
+    }
+
+    // Extract asset ID from URI if possible
+    const assetId = imageUri.split('/').pop()?.split('.')[0];
+    console.log('Extracted asset ID:', assetId);
+
+    if (assetId) {
+      try {
+        // Try to get asset info using the ID
+        const assetInfo = await MediaLibrary.getAssetInfoAsync(assetId);
+        console.log('Asset info:', assetInfo);
+        
+        if (assetInfo && assetInfo.location) {
+          console.log('Location found:', assetInfo.location);
+          return {
+            latitude: assetInfo.location.latitude,
+            longitude: assetInfo.location.longitude,
+            hasLocation: true,
+          };
+        }
+      } catch (e) {
+        console.log('Could not get asset info from ID:', e);
+      }
+    }
+
+    // Fallback: search through all recent assets
+    console.log('Searching through media library assets...');
+    const assets = await MediaLibrary.getAssetsAsync({
+      first: 100,
+      mediaType: 'photo',
+      sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+    });
+
+    if (!assets.assets || assets.assets.length === 0) {
+      console.log('No assets found in media library');
+      return { hasLocation: false };
+    }
+
+    // Log all assets and their locations
+    console.log('Total assets found:', assets.assets.length);
+    for (const asset of assets.assets) {
+      console.log('Asset:', asset.id, 'Location:', asset.location);
+      
+      if (asset.location && asset.location.latitude && asset.location.longitude) {
+        // Return first asset with location as fallback
+        return {
+          latitude: asset.location.latitude,
+          longitude: asset.location.longitude,
+          hasLocation: true,
+          fromFallback: true,
+        };
+      }
+    }
+
+    console.log('No assets with location found');
+    return { hasLocation: false };
+  } catch (error) {
+    console.error('Error extracting EXIF location:', error);
+    return { hasLocation: false };
+  }
+};
+
 const { height } = Dimensions.get('window');
 
 const OnionScanApp = ({ navigation }) => {
@@ -111,6 +183,12 @@ const OnionScanApp = ({ navigation }) => {
   const [showAlert, setShowAlert] = useState(false);
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+
+  // NEW: minimize
+  const [minimized, setMinimized] = useState(false);
+
+  // NEW: location from metadata
+  const [pendingImageLocation, setPendingImageLocation] = useState(null);
 
   const showCustomAlert = (title, message) => {
     setAlertTitle(title);
@@ -358,17 +436,27 @@ const OnionScanApp = ({ navigation }) => {
     };
   };
 
-  const savePrediction = async (pestDetails, latitude, longitude, locationAddress) => {
+  const savePrediction = async (pestDetails, latitude, longitude, locationAddress, dateTimeOriginal = null) => {
     try {
       if (!userId) {
         showCustomAlert('Error', 'User not authenticated.');
         return;
       }
-
       const farmerName = await getFarmerName(userId);
-      const now = new Date();
-      const date = now.toISOString().split('T')[0];
-      const time = now.toTimeString().split(' ')[0];
+      
+      // Use DateTimeOriginal from EXIF if available, otherwise use current time
+      let date, time;
+      if (dateTimeOriginal) {
+        // DateTimeOriginal format is typically "YYYY:MM:DD HH:MM:SS"
+        const [datePart, timePart] = dateTimeOriginal.split(' ');
+        date = datePart.replace(/:/g, '-'); // Convert "YYYY:MM:DD" to "YYYY-MM-DD"
+        time = timePart || '00:00:00';
+      } else {
+        const now = new Date();
+        date = now.toISOString().split('T')[0];
+        time = now.toTimeString().split(' ')[0];
+      }
+      
       const generatedId = Date.now().toString();
 
       const scanData = {
@@ -432,7 +520,23 @@ const OnionScanApp = ({ navigation }) => {
   };
 
   const handleImageSelection = async (imageUri) => {
-    const locationResult = await requestLocationPermission();
+    let locationResult;
+
+    // NEW: If we have location from EXIF, use it; otherwise request GPS
+    if (pendingImageLocation?.source === 'exif') {
+      locationResult = {
+        granted: true,
+        latitude: pendingImageLocation.latitude,
+        longitude: pendingImageLocation.longitude,
+      };
+      showCustomAlert(
+        'Using Image Location',
+        'Using location from image EXIF data'
+      );
+    } else {
+      locationResult = await requestLocationPermission();
+    }
+
     if (!locationResult.granted) return;
 
     const { latitude, longitude } = locationResult;
@@ -450,8 +554,17 @@ const OnionScanApp = ({ navigation }) => {
         pestDetails.longitude = longitude;
         pestDetails.confidence = (prediction.confidence * 100).toFixed(2) + '%';
         pestDetails.locationAddress = locationAddress;
+        // NEW: Track location source and datetime
+        pestDetails.locationSource = pendingImageLocation?.source || 'gps';
+        pestDetails.dateTimeOriginal = pendingImageLocation?.dateTimeOriginal || null;
 
-        const id = await savePrediction(pestDetails, latitude, longitude, locationAddress);
+        const id = await savePrediction(
+        pestDetails, 
+        latitude, 
+        longitude, 
+        locationAddress,
+        pendingImageLocation?.dateTimeOriginal
+      );
         if (id) {
           navigation.navigate('ResultScreen', { item: id });
         }
@@ -460,24 +573,105 @@ const OnionScanApp = ({ navigation }) => {
       showCustomAlert('Error', error.message);
     } finally {
       setLoading(false);
+      setMinimized(false);
+      // NEW: Clear after use
+      setPendingImageLocation(null);
     }
   };
 
-  const handleCapturePest = async () => {
-    if (!hasCameraPermission) {
-      showCustomAlert('Error', 'Camera permission not granted');
-      return;
+  // Helper function to convert GPS coordinates from DMS to Decimal Degrees
+  const convertDMSToDD = (dms, ref) => {
+    if (!dms || !Array.isArray(dms) || dms.length < 3) {
+      return null;
     }
 
-    let result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 1,
-    });
+    try {
+      const degrees = dms[0];
+      const minutes = dms[1];
+      const seconds = dms[2];
 
-    if (!result.canceled && result.assets?.length > 0) {
-      const imageUri = result.assets[0].uri;
-      setPendingImage(imageUri);   // 👈 open editor instead
-      setIsEditing(true);
+      let dd = degrees + minutes / 60 + seconds / 3600;
+
+      // If South or West, make negative
+      if (ref === 'S' || ref === 'W') {
+        dd = -dd;
+      }
+
+      return dd;
+    } catch (error) {
+      console.error('Error converting DMS to DD:', error);
+      return null;
+    }
+  };
+
+  // Helper function to validate coordinates
+  const isValidCoordinate = (lat, lng) => {
+    // Check if coordinates exist, are not 0,0, and are within valid ranges
+    if (lat === null || lng === null || lat === undefined || lng === undefined) {
+      return false;
+    }
+    if (lat === 0 && lng === 0) {
+      return false; // Null Island - likely GPS was disabled
+    }
+    // Check if within valid latitude/longitude ranges
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return false;
+    }
+    return true;
+  };
+
+  // Helper function to extract location and datetime from EXIF data
+  const extractLocationFromExif = (exif) => {
+    if (!exif || !exif.GPSLatitude || !exif.GPSLongitude) {
+      return null;
+    }
+
+    let latitude, longitude;
+
+    // Check if coordinates are in DMS format (array) or already decimal (number)
+    if (Array.isArray(exif.GPSLatitude)) {
+      // DMS format - convert to decimal
+      latitude = convertDMSToDD(
+        exif.GPSLatitude,
+        exif.GPSLatitudeRef || 'N'
+      );
+      longitude = convertDMSToDD(
+        exif.GPSLongitude,
+        exif.GPSLongitudeRef || 'E'
+      );
+    } else if (typeof exif.GPSLatitude === 'number' && typeof exif.GPSLongitude === 'number') {
+      // Already in decimal format
+      latitude = exif.GPSLatitude;
+      longitude = exif.GPSLongitude;
+      
+      // Apply hemisphere correction based on refs
+      if (exif.GPSLatitudeRef === 'S' && latitude > 0) {
+        latitude = -latitude;
+      }
+      if (exif.GPSLongitudeRef === 'W' && longitude > 0) {
+        longitude = -longitude;
+      }
+    } else {
+      console.log('Unknown GPS coordinate format:', typeof exif.GPSLatitude);
+      return null;
+    }
+
+    // Extract DateTimeOriginal if available
+    const dateTimeOriginal = exif.DateTimeOriginal || null;
+    if (dateTimeOriginal) {
+      console.log('DateTimeOriginal from EXIF:', dateTimeOriginal);
+    }
+
+    // Validate the coordinates
+    if (latitude && longitude && isValidCoordinate(latitude, longitude)) {
+      return { 
+        latitude, 
+        longitude,
+        dateTimeOriginal // Add datetime to returned object
+      };
+    } else {
+      console.log('Invalid coordinates:', latitude, longitude);
+      return null;
     }
   };
 
@@ -487,18 +681,176 @@ const OnionScanApp = ({ navigation }) => {
       return;
     }
 
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 1,
-    });
+    try {
+      // Step 1: Use ImagePicker to let user select
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 1,
+        exif: true, // Request EXIF data
+      });
 
-    if (!result.canceled && result.assets?.length > 0) {
-      const imageUri = result.assets[0].uri;
-      setPendingImage(imageUri);   // 👈 open editor instead
+      if (result.canceled || !result.assets?.length) {
+        return;
+      }
+
+      const selectedUri = result.assets[0].uri;
+      
+      // Step 2: Try to get location from ImagePicker EXIF first
+      let locationFound = false;
+      let exifLocation = null;
+
+      if (result.assets[0].exif) {
+        const exif = result.assets[0].exif;
+        console.log('EXIF data available:', exif);
+        
+        // Extract location using helper function
+        exifLocation = extractLocationFromExif(exif);
+        
+        if (exifLocation) {
+          locationFound = true;
+          console.log('Location from EXIF:', exifLocation);
+        }
+      }
+
+      // Step 3: Fallback - search through recent photos with location
+      if (!locationFound) {
+        console.log('No EXIF location, trying to find recent photo with location...');
+        
+        // Get recent assets to search through
+        const recentAssets = await MediaLibrary.getAssetsAsync({
+          first: 100,
+          mediaType: 'photo',
+          sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+        });
+
+        // Search for the first photo with valid location
+        for (const asset of recentAssets.assets) {
+          try {
+            const assetInfo = await MediaLibrary.getAssetInfoAsync(asset.id);
+            
+            if (assetInfo.location && 
+                isValidCoordinate(assetInfo.location.latitude, assetInfo.location.longitude)) {
+              exifLocation = {
+                latitude: assetInfo.location.latitude,
+                longitude: assetInfo.location.longitude,
+              };
+              locationFound = true;
+              console.log('Using location from recent photo:', exifLocation);
+              showCustomAlert(
+                'Location Estimate',
+                'Using location from a recent photo. For best accuracy, enable location in your camera settings.'
+              );
+              break;
+            }
+          } catch (error) {
+            console.log('Error reading asset info:', error);
+          }
+        }
+      }
+
+      // Step 4: Set location or prepare for GPS fallback
+      if (locationFound && exifLocation) {
+        setPendingImageLocation({
+          latitude: exifLocation.latitude,
+          longitude: exifLocation.longitude,
+          dateTimeOriginal: exifLocation.dateTimeOriginal, // Include datetime
+          source: 'exif',
+        });
+        
+        const locationMsg = `Using location from image:\n${exifLocation.latitude.toFixed(4)}, ${exifLocation.longitude.toFixed(4)}`;
+        const dateMsg = exifLocation.dateTimeOriginal 
+          ? `\n\nPhoto taken: ${exifLocation.dateTimeOriginal}` 
+          : '';
+        
+        showCustomAlert(
+          'Location Found',
+          locationMsg + dateMsg
+        );
+      } else {
+        showCustomAlert(
+          'No Location in Image',
+          'Image has no location data. Will use current GPS location.'
+        );
+        setPendingImageLocation(null);
+      }
+
+      // Step 5: Open crop editor
+      setPendingImage(selectedUri);
       setIsEditing(true);
+
+    } catch (error) {
+      console.error('Error selecting from gallery:', error);
+      showCustomAlert('Error', 'Failed to access gallery: ' + error.message);
     }
   };
 
+  const handleCapturePest = async () => {
+    if (!hasCameraPermission) {
+      showCustomAlert('Error', 'Camera permission not granted');
+      return;
+    }
+
+    try {
+      let result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 1,
+        exif: true, // Request EXIF data including location
+      });
+
+      if (!result.canceled && result.assets?.length > 0) {
+        const imageUri = result.assets[0].uri;
+        
+        // Try to extract location from camera EXIF
+        let locationFound = false;
+        let exifLocation = null;
+
+        if (result.assets[0].exif) {
+          const exif = result.assets[0].exif;
+          console.log('Camera EXIF data:', exif);
+          
+          // Extract location using helper function
+          exifLocation = extractLocationFromExif(exif);
+          
+          if (exifLocation) {
+            locationFound = true;
+            console.log('Location from camera EXIF:', exifLocation);
+          }
+        }
+
+        // Set location if found
+        if (locationFound && exifLocation) {
+          setPendingImageLocation({
+            latitude: exifLocation.latitude,
+            longitude: exifLocation.longitude,
+            dateTimeOriginal: exifLocation.dateTimeOriginal, // Include datetime
+            source: 'exif',
+          });
+          
+          const locationMsg = `Photo location:\n${exifLocation.latitude.toFixed(4)}, ${exifLocation.longitude.toFixed(4)}`;
+          const dateMsg = exifLocation.dateTimeOriginal 
+            ? `\n\nCaptured: ${exifLocation.dateTimeOriginal}` 
+            : '';
+          
+          showCustomAlert(
+            'Location Captured',
+            locationMsg + dateMsg
+          );
+        } else {
+          console.log('No valid location in camera EXIF, will use GPS');
+          // Will use GPS fallback
+          setPendingImageLocation(null);
+        }
+        
+        // Open crop editor
+        setPendingImage(imageUri);
+        setIsEditing(true);
+      }
+    } catch (error) {
+      console.error('Error capturing photo:', error);
+      showCustomAlert('Error', 'Failed to capture photo: ' + error.message);
+    }
+  };
+  
   // NEW: crop complete
   const handleCropComplete = (croppedImageData) => {
     setIsEditing(false);
@@ -567,8 +919,8 @@ const OnionScanApp = ({ navigation }) => {
         />
       )}
 
-      {/* Loading Indicator Overlay */}
-      <Modal transparent={true} animationType="fade" visible={loading}>
+      {/* LOADING MODAL */}
+      <Modal transparent={true} animationType="fade" visible={loading && !minimized}>
         <View style={styles.loadingOverlay}>
           <View style={styles.spinnerContainer}>
             <Image
@@ -576,13 +928,34 @@ const OnionScanApp = ({ navigation }) => {
               resizeMode="contain"
               style={styles.onionGif}
             />
-            <ActivityIndicator size="large" color="#7a1f6f" style={styles.spinner} />
+            <ActivityIndicator size="large" color="#7a1f6f"/>
             <Text style={styles.loadingText}>
               {loadingMessages[loadingStep]}
             </Text>
+
+            <TouchableOpacity
+              style={styles.minimizeButton}
+              onPress={() => setMinimized(true)}
+            >
+              <Text style={styles.minimizeButtonText}>−</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      {/* Minimized Floating Status Bubble */}
+      {loading && minimized && (
+        <TouchableOpacity
+          style={styles.minimizedBubble}
+          onPress={() => setMinimized(false)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.minimizedStepText}>
+            {loadingMessages[loadingStep]}
+          </Text>
+          <Text style={styles.minimizedRestore}>+</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Awesome Alert */}
       <AwesomeAlert
@@ -724,6 +1097,53 @@ const styles = StyleSheet.create({
     width: 160,
     height: 160,
     marginBottom: 20,
+  },
+  minimizeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#ddd',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  minimizeButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#555',
+  },
+  minimizedBubble: {
+    position: 'absolute',
+    bottom: 30,
+    right: 30,
+    backgroundColor: '#7a1f6f',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    maxWidth: 260,
+  },
+  minimizedStepText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 12,
+    flexShrink: 1,
+  },
+  minimizedRestore: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+    width: 24,
+    textAlign: 'center',
   },
 });
 

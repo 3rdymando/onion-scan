@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Onion Scan",
-    "slug": "onionscan",
+    "slug": "onion-scan",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo1.png",
@@ -27,12 +27,12 @@
     },
     "extra": {
       "eas": {
-        "projectId": "1e38c920-4fd3-43e0-8768-06da332630c6"
+        "projectId": "97099ac9-1dba-4c3c-a793-c1ef52863d7c"
       }
     },
     "plugins": [
       "expo-font"
     ],
-    "owner": "qjbferrer"
+    "owner": "3rdymando"
   }
 }
