@@ -21,7 +21,7 @@ import { getAuth } from 'firebase/auth';
 import axios from 'axios';
 import AwesomeAlert from 'react-native-awesome-alerts';  // NEW
 import { ImageEditor } from "expo-dynamic-image-crop";
-
+import NetInfo from "@react-native-community/netinfo";
 
 const getAddressFromCoords = async (lat, lng) => {
   const accessToken = 'pk.eyJ1IjoicWpiZmVycmVyIiwiYSI6ImNtYTlqbDEyaTBrYnUya3BzeHd4ZWFnOXMifQ.PeNfgVuGD53Au8Vmkpe2RQ';
@@ -165,6 +165,13 @@ const getLocationFromImageExif = async (imageUri) => {
 
 const { height } = Dimensions.get('window');
 
+// Helper: format coordinates to 7 decimal places consistently
+const formatCoord7 = (num) => {
+  if (num === null || num === undefined || Number.isNaN(Number(num))) return null;
+  // Ensure numeric and keep as Number (not string) when stored/used programmatically
+  return parseFloat(Number(num).toFixed(7));
+};
+
 const OnionScanApp = ({ navigation }) => {
   const [hasCameraPermission, setHasCameraPermission] = useState(null);
   const [hasMediaPermission, setHasMediaPermission] = useState(null);
@@ -186,6 +193,8 @@ const OnionScanApp = ({ navigation }) => {
 
   // NEW: minimize
   const [minimized, setMinimized] = useState(false);
+
+  const [isConnected, setIsConnected] = useState(true);
 
   // NEW: location from metadata
   const [pendingImageLocation, setPendingImageLocation] = useState(null);
@@ -232,6 +241,22 @@ const OnionScanApp = ({ navigation }) => {
       const locationStatus = await Location.requestForegroundPermissionsAsync();
       setLocationPermissionStatus(locationStatus.status);
     })();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(async (state) => {
+      setIsConnected(state.isConnected);
+      if (state.isConnected) {
+        try {
+          await syncOfflineScans();
+        } catch (err) {
+          console.error('Error during offline sync:', err);
+        }
+      }
+    });
+
+    NetInfo.fetch().then(state => setIsConnected(state.isConnected));
+    return () => unsubscribe();
   }, []);
 
   // Handle rotating loading messages with different durations
@@ -282,10 +307,15 @@ const OnionScanApp = ({ navigation }) => {
       const location = await Location.getCurrentPositionAsync({});
       showCustomAlert('Location Access', 'Permission granted and GPS is ON!');
       setLoading(false);
+
+      // Format coordinates to 7 decimals
+      const lat7 = formatCoord7(location.coords.latitude);
+      const lng7 = formatCoord7(location.coords.longitude);
+
       return {
         granted: true,
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
+        latitude: lat7,
+        longitude: lng7,
       };
     } catch (error) {
       showCustomAlert('Location Error', 'Failed to get location: ' + error.message);
@@ -374,6 +404,7 @@ const OnionScanApp = ({ navigation }) => {
           {
             category: 'Chemical Control',
             methods: [
+              'Use of Bt corn hybrids.',
               'Use of FPA-registered pesticides following the manufacturer’s recommendation.',
               'Avoid excessive use of chemicals to prevent the development of pesticide resistance.'
             ]
@@ -466,8 +497,8 @@ const OnionScanApp = ({ navigation }) => {
         date,
         time,
         image: pestDetails.image,
-        latitude,
-        longitude,
+        latitude: formatCoord7(latitude),
+        longitude: formatCoord7(longitude),
         locationAddress,
         details: pestDetails,
         farmerName,
@@ -492,8 +523,9 @@ const OnionScanApp = ({ navigation }) => {
         name: 'image.jpg',
         type: 'image/jpeg',
       });
-      formData.append('latitude', latitude.toString());
-      formData.append('longitude', longitude.toString());
+      // send coordinates as strings with consistent formatting
+      formData.append('latitude', String(formatCoord7(latitude)));
+      formData.append('longitude', String(formatCoord7(longitude)));
 
       const response = await fetch('https://qjbferrer-onionscanserver.hf.space/predict', {
         method: 'POST',
@@ -518,32 +550,175 @@ const OnionScanApp = ({ navigation }) => {
       return null;
     }
   };
+  
+  const saveOfflineScan = async (scan) => {
+    try {
+      // Ensure stored coords are formatted
+      const s = {
+        ...scan,
+        latitude: formatCoord7(scan.latitude),
+        longitude: formatCoord7(scan.longitude),
+      };
+      const existing = await AsyncStorage.getItem("offline_scans");
+      const scans = existing ? JSON.parse(existing) : [];
+      scans.push(s);
+      await AsyncStorage.setItem("offline_scans", JSON.stringify(scans));
+    } catch (err) {
+      console.error("Offline save error:", err);
+    }
+  };
+
+  const syncOfflineScans = async () => {
+    try {
+      const scansData = await AsyncStorage.getItem("offline_scans");
+      if (!scansData) return;
+
+      const scans = JSON.parse(scansData);
+      if (!Array.isArray(scans) || scans.length === 0) return;
+
+      const succeededIds = [];
+
+      for (const item of scans) {
+        try {
+          // STEP 1 — Upload Image
+          const cloudUrl = await uploadToCloudinary(item.localImageUri);
+
+          // STEP 2 — RUN PREDICTION (ensure coords formatted)
+          const prediction = await callPredictionAPI(cloudUrl, formatCoord7(item.latitude), formatCoord7(item.longitude));
+          if (!prediction) continue;
+
+          // STEP 3 — Re-geocode when device is online
+          let freshAddress = "Unknown Location";
+          try {
+            freshAddress = await getAddressFromCoords(formatCoord7(item.latitude), formatCoord7(item.longitude));
+          } catch (geoErr) {
+            console.warn("Reverse geocoding during sync failed:", geoErr);
+          }
+
+          // STEP 4 — Build pest details
+          const pestDetails = getPestDetails(prediction.predicted_class);
+          pestDetails.image = cloudUrl;
+          pestDetails.latitude = formatCoord7(item.latitude);
+          pestDetails.longitude = formatCoord7(item.longitude);
+          pestDetails.confidence = (prediction.confidence * 100).toFixed(2) + "%";
+          pestDetails.locationAddress = freshAddress;
+          pestDetails.locationSource = item.locationSource;
+
+          const date = item.date || new Date().toISOString().split('T')[0];
+          const time = item.time || new Date().toTimeString().split(' ')[0];
+          const docId = item.id || Date.now().toString();
+
+          // STEP 5 — Save to Firestore
+          const scanData = {
+            id: docId,
+            result: pestDetails.title,
+            confidence: pestDetails.confidence,
+            date,
+            time,
+            image: cloudUrl,
+            latitude: formatCoord7(item.latitude),
+            longitude: formatCoord7(item.longitude),
+            locationAddress: freshAddress,
+            details: pestDetails,
+            farmerName: item.farmerName || (userId ? await getFarmerName(userId) : 'Unknown Farmer'),
+            userId: item.userId || userId,
+            verificationStatus: "Pending"
+          };
+
+          await setDoc(doc(db, 'pestScans', docId), scanData);
+          succeededIds.push(item.id);
+
+        } catch (err) {
+          console.error('Error syncing offline item', item.id, err);
+          continue;
+        }
+      }
+
+      if (succeededIds.length > 0) {
+        const remaining = scans.filter(s => !succeededIds.includes(s.id));
+        if (remaining.length > 0) {
+          await AsyncStorage.setItem("offline_scans", JSON.stringify(remaining));
+        } else {
+          await AsyncStorage.removeItem("offline_scans");
+        }
+        showCustomAlert('Sync Complete', `${succeededIds.length} offline scan(s) synced successfully.`);
+      }
+    } catch (err) {
+      console.error('Failed to sync offline scans:', err);
+    }
+  };
+
 
   const handleImageSelection = async (imageUri) => {
     let locationResult;
 
-    // NEW: If we have location from EXIF, use it; otherwise request GPS
+    // Use EXIF location if available, otherwise request GPS
     if (pendingImageLocation?.source === 'exif') {
       locationResult = {
         granted: true,
         latitude: pendingImageLocation.latitude,
         longitude: pendingImageLocation.longitude,
       };
-      showCustomAlert(
-        'Using Image Location',
-        'Using location from image EXIF data'
-      );
+      showCustomAlert('Using Image Location', 'Using location from image EXIF data');
     } else {
       locationResult = await requestLocationPermission();
     }
 
     if (!locationResult.granted) return;
 
-    const { latitude, longitude } = locationResult;
-    setLoading(true);
+    // format coordinates to 7 decimals immediately
+    const latitude = formatCoord7(locationResult.latitude);
+    const longitude = formatCoord7(locationResult.longitude);
 
+    const now = new Date();
+    const date = now.toISOString().split('T')[0];
+    const time = now.toTimeString().split(' ')[0];
+    const generatedId = Date.now().toString();
+
+    let locationAddress = 'Unknown (Offline)';
     try {
-      const locationAddress = await getAddressFromCoords(latitude, longitude);
+      locationAddress = await getAddressFromCoords(latitude, longitude);
+    } catch (err) {
+      console.warn('Reverse geocode failed:', err);
+    }
+
+    // OFFLINE MODE: Save scan locally if no internet
+    if (!isConnected) {
+      try {
+        const auth = getAuth();
+        const user = auth.currentUser;
+        const farmer = user ? await getFarmerName(user.uid) : farmerName || 'Unknown Farmer';
+
+        const offlineScan = {
+          id: generatedId,
+          localImageUri: imageUri,
+          latitude,
+          longitude,
+          locationAddress,
+          date,
+          time,
+          farmerName: farmer,
+          userId: user ? user.uid : userId,
+          locationSource: pendingImageLocation?.source || 'gps',
+          dateTimeOriginal: pendingImageLocation?.dateTimeOriginal || null,
+        };
+
+        await saveOfflineScan(offlineScan);
+        showCustomAlert(
+          'Saved Offline',
+          'Your scan was saved locally and will sync once internet is available.'
+        );
+        return;
+      } catch (err) {
+        console.error('Failed to save offline scan:', err);
+        showCustomAlert('Offline Save Error', 'Failed to save scan locally: ' + err.message);
+        return;
+      }
+    }
+
+    // ONLINE MODE: Upload and process scan
+    setLoading(true);
+    try {
       const uploadedImageUrl = await uploadToCloudinary(imageUri);
       const prediction = await callPredictionAPI(uploadedImageUrl, latitude, longitude);
 
@@ -554,17 +729,16 @@ const OnionScanApp = ({ navigation }) => {
         pestDetails.longitude = longitude;
         pestDetails.confidence = (prediction.confidence * 100).toFixed(2) + '%';
         pestDetails.locationAddress = locationAddress;
-        // NEW: Track location source and datetime
         pestDetails.locationSource = pendingImageLocation?.source || 'gps';
         pestDetails.dateTimeOriginal = pendingImageLocation?.dateTimeOriginal || null;
 
         const id = await savePrediction(
-        pestDetails, 
-        latitude, 
-        longitude, 
-        locationAddress,
-        pendingImageLocation?.dateTimeOriginal
-      );
+          pestDetails,
+          latitude,
+          longitude,
+          locationAddress,
+          pendingImageLocation?.dateTimeOriginal
+        );
         if (id) {
           navigation.navigate('ResultScreen', { item: id });
         }
@@ -574,7 +748,6 @@ const OnionScanApp = ({ navigation }) => {
     } finally {
       setLoading(false);
       setMinimized(false);
-      // NEW: Clear after use
       setPendingImageLocation(null);
     }
   };
@@ -664,9 +837,10 @@ const OnionScanApp = ({ navigation }) => {
 
     // Validate the coordinates
     if (latitude && longitude && isValidCoordinate(latitude, longitude)) {
+      // Format to 7 decimals before returning
       return { 
-        latitude, 
-        longitude,
+        latitude: formatCoord7(latitude), 
+        longitude: formatCoord7(longitude),
         dateTimeOriginal // Add datetime to returned object
       };
     } else {
@@ -731,8 +905,8 @@ const OnionScanApp = ({ navigation }) => {
             if (assetInfo.location && 
                 isValidCoordinate(assetInfo.location.latitude, assetInfo.location.longitude)) {
               exifLocation = {
-                latitude: assetInfo.location.latitude,
-                longitude: assetInfo.location.longitude,
+                latitude: formatCoord7(assetInfo.location.latitude),
+                longitude: formatCoord7(assetInfo.location.longitude),
               };
               locationFound = true;
               console.log('Using location from recent photo:', exifLocation);
@@ -757,7 +931,7 @@ const OnionScanApp = ({ navigation }) => {
           source: 'exif',
         });
         
-        const locationMsg = `Using location from image:\n${exifLocation.latitude.toFixed(4)}, ${exifLocation.longitude.toFixed(4)}`;
+        const locationMsg = `Using location from image:\n${exifLocation.latitude.toFixed ? exifLocation.latitude.toFixed(7) : exifLocation.latitude}, ${exifLocation.longitude.toFixed ? exifLocation.longitude.toFixed(7) : exifLocation.longitude}`;
         const dateMsg = exifLocation.dateTimeOriginal 
           ? `\n\nPhoto taken: ${exifLocation.dateTimeOriginal}` 
           : '';
@@ -794,54 +968,93 @@ const OnionScanApp = ({ navigation }) => {
       let result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 1,
-        exif: true, // Request EXIF data including location
+        exif: true,
       });
 
       if (!result.canceled && result.assets?.length > 0) {
         const imageUri = result.assets[0].uri;
-        
-        // Try to extract location from camera EXIF
+
+        // --- EXIF location extraction ---
         let locationFound = false;
         let exifLocation = null;
 
         if (result.assets[0].exif) {
           const exif = result.assets[0].exif;
-          console.log('Camera EXIF data:', exif);
-          
-          // Extract location using helper function
           exifLocation = extractLocationFromExif(exif);
-          
+
           if (exifLocation) {
             locationFound = true;
             console.log('Location from camera EXIF:', exifLocation);
           }
         }
 
-        // Set location if found
+        // Set pending image location state
         if (locationFound && exifLocation) {
           setPendingImageLocation({
             latitude: exifLocation.latitude,
             longitude: exifLocation.longitude,
-            dateTimeOriginal: exifLocation.dateTimeOriginal, // Include datetime
+            dateTimeOriginal: exifLocation.dateTimeOriginal,
             source: 'exif',
           });
-          
-          const locationMsg = `Photo location:\n${exifLocation.latitude.toFixed(4)}, ${exifLocation.longitude.toFixed(4)}`;
-          const dateMsg = exifLocation.dateTimeOriginal 
-            ? `\n\nCaptured: ${exifLocation.dateTimeOriginal}` 
-            : '';
-          
-          showCustomAlert(
-            'Location Captured',
-            locationMsg + dateMsg
-          );
         } else {
-          console.log('No valid location in camera EXIF, will use GPS');
-          // Will use GPS fallback
           setPendingImageLocation(null);
+          showCustomAlert(
+            'No Location in Image',
+            'Image has no location data. Will use current GPS location or offline fallback.'
+          );
         }
-        
-        // Open crop editor
+
+        // --- OFFLINE HANDLING ---
+        const locationResult = locationFound && exifLocation
+          ? { granted: true, latitude: exifLocation.latitude, longitude: exifLocation.longitude }
+          : await requestLocationPermission();
+
+        if (!locationResult.granted) return;
+
+        // format coords to 7 decimals
+        const latitude = formatCoord7(locationResult.latitude);
+        const longitude = formatCoord7(locationResult.longitude);
+
+        const now = new Date();
+        const date = now.toISOString().split('T')[0];
+        const time = now.toTimeString().split(' ')[0];
+        const generatedId = Date.now().toString();
+
+        let locationAddress = 'Unknown (Offline)';
+        try {
+          locationAddress = await getAddressFromCoords(latitude, longitude);
+        } catch (err) {
+          console.warn('Reverse geocode failed:', err);
+        }
+
+        if (!isConnected) {
+          const auth = getAuth();
+          const user = auth.currentUser;
+          const farmer = user ? await getFarmerName(user.uid) : farmerName || 'Unknown Farmer';
+
+          const offlineScan = {
+            id: generatedId,
+            localImageUri: imageUri,
+            latitude,
+            longitude,
+            locationAddress,
+            date,
+            time,
+            farmerName: farmer,
+            userId: user ? user.uid : userId,
+            locationSource: pendingImageLocation?.source || 'gps',
+            dateTimeOriginal: pendingImageLocation?.dateTimeOriginal || null,
+          };
+
+          await saveOfflineScan(offlineScan);
+          showCustomAlert(
+            'Saved Offline',
+            'Your scan was saved locally and will sync once internet is available.'
+          );
+          return;
+        }
+
+        // --- ONLINE MODE: Crop editor / ImageSelection pipeline ---
         setPendingImage(imageUri);
         setIsEditing(true);
       }
